@@ -22,7 +22,6 @@ jobs:
       - name: Prepare Test Logic
         id: test_prep
         run: |
-          # Read lines, strip whitespace, and create a comma-separated list
           if [ -f tests_to_run.txt ]; then
             TESTS=$(grep -v '^$' tests_to_run.txt | tr '\n' ',' | sed 's/,$//')
           else
@@ -30,29 +29,30 @@ jobs:
           fi
           
           if [ -z "$TESTS" ]; then
-            echo "No tests found. Skipping test execution."
-            echo "test_level=NoTestRun" >> $GITHUB_OUTPUT
-            echo "test_list=" >> $GITHUB_OUTPUT
+            echo "test_mode=none" >> $GITHUB_OUTPUT
           else
-            echo "Tests found: $TESTS"
-            echo "test_level=RunSpecifiedTests" >> $GITHUB_OUTPUT
+            echo "test_mode=specified" >> $GITHUB_OUTPUT
             echo "test_list=$TESTS" >> $GITHUB_OUTPUT
           fi
 
       - name: Validation (Dev/UAT)
         if: github.ref != 'refs/heads/main'
         run: |
-          if [ "${{ steps.test_prep.outputs.test_level }}" == "NoTestRun" ]; then
-            sf project deploy validate --source-dir force-app --test-level NoTestRun --target-org target_org
+          if [ "${{ steps.test_prep.outputs.test_mode }}" == "none" ]; then
+            # No test level flag used
+            sf project deploy validate --source-dir force-app --target-org target_org
           else
+            # Run specific tests
             sf project deploy validate --source-dir force-app --test-level RunSpecifiedTests --tests ${{ steps.test_prep.outputs.test_list }} --target-org target_org
           fi
 
       - name: Deployment (Main Branch)
         if: github.ref == 'refs/heads/main'
         run: |
-          if [ "${{ steps.test_prep.outputs.test_level }}" == "NoTestRun" ]; then
-            sf project deploy start --source-dir force-app --test-level NoTestRun --target-org target_org --wait 30
+          if [ "${{ steps.test_prep.outputs.test_mode }}" == "none" ]; then
+            # No test level flag used
+            sf project deploy start --source-dir force-app --target-org target_org --wait 30
           else
+            # Run specific tests
             sf project deploy start --source-dir force-app --test-level RunSpecifiedTests --tests ${{ steps.test_prep.outputs.test_list }} --target-org target_org --wait 30
           fi
