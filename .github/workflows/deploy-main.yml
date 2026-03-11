@@ -3,9 +3,9 @@ name: Salesforce DevOps Pipeline
 on:
   push:
     branches:
-      - main
       - dev
       - uat
+      - main
 
 jobs:
   salesforce-ci:
@@ -21,7 +21,7 @@ jobs:
     - name: Install Salesforce CLI
       run: npm install @salesforce/cli --global
 
-    - name: Setup Java
+    - name: Setup Java (Required for PMD)
       uses: actions/setup-java@v3
       with:
         distribution: temurin
@@ -47,26 +47,49 @@ jobs:
           -f text \
           -minimumpriority 2
 
-    - name: Read Tests From File
+    - name: Read Test Classes
       id: tests
       run: |
+        if [ ! -f tests_to_run.txt ]; then
+          echo "tests_to_run.txt file not found"
+          exit 1
+        fi
+
         TESTS=$(grep -v '^$' tests_to_run.txt | tr '\n' ',' | sed 's/,$//')
-        echo "Tests: $TESTS"
+
+        echo "Tests to run: $TESTS"
+
         echo "test_classes=$TESTS" >> $GITHUB_OUTPUT
 
-    - name: Deploy Metadata to Org
+    - name: Validate Deployment (DEV / UAT)
+      if: github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/uat'
       run: |
-        echo "Deploying metadata first so tests exist in org"
+        echo "Running validation for DEV/UAT"
 
-        sf project deploy start \
+        sf project deploy validate \
           --source-dir force-app \
+          --test-level RunSpecifiedTests \
+          --tests "${{ steps.tests.outputs.test_classes }}" \
+          --target-org target_org \
+          --wait 30 \
+          --verbose
+
+    - name: Validate Deployment (MAIN)
+      if: github.ref == 'refs/heads/main'
+      run: |
+        echo "Validating deployment for MAIN"
+
+        sf project deploy validate \
+          --source-dir force-app \
+          --test-level RunSpecifiedTests \
+          --tests "${{ steps.tests.outputs.test_classes }}" \
           --target-org target_org \
           --wait 30 \
           --verbose
 
     - name: Run Apex Tests With Coverage
       run: |
-        echo "Running Apex Tests"
+        echo "Running Apex Tests with Coverage"
 
         sf apex run test \
           --tests "${{ steps.tests.outputs.test_classes }}" \
@@ -76,26 +99,28 @@ jobs:
           --result-format json \
           --output-dir test-results
 
-    - name: Show Coverage
+    - name: Show Coverage Report
       run: |
         echo "Coverage Summary"
         jq '.summary' test-results/test-result-*.json
 
-    - name: Validate Coverage >= 76
+    - name: Enforce 76 Percent Coverage
       run: |
         COVERAGE=$(jq '.summary.orgWideCoverage' test-results/test-result-*.json)
 
-        echo "Coverage: $COVERAGE%"
+        echo "Org Coverage: $COVERAGE%"
 
         if (( $(echo "$COVERAGE < 76" | bc -l) )); then
-          echo "Coverage below 76%. Failing pipeline."
+          echo "Code coverage below 76%. Failing pipeline."
           exit 1
+        else
+          echo "Coverage requirement satisfied."
         fi
 
-    - name: Deploy to Main Org
+    - name: Deploy to Org (MAIN)
       if: github.ref == 'refs/heads/main'
       run: |
-        echo "Deploying to Main Branch Org"
+        echo "Deploying to Salesforce Org"
 
         sf project deploy start \
           --source-dir force-app \
