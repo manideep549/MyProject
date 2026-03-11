@@ -52,7 +52,9 @@ jobs:
       - name: Run Apex PMD Scan
         run: |
           echo "Running Apex PMD Scan"
-          pmd -d force-app \
+
+          pmd-bin-6.55.0/bin/run.sh pmd \
+          -d force-app \
           -R category/apex/bestpractices.xml,category/apex/design.xml \
           -f text \
           -language apex
