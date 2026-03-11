@@ -57,52 +57,38 @@ jobs:
           -d force-app \
           -R category/apex/bestpractices.xml,category/apex/design.xml \
           -f text \
-          -language apex
+          -minimumpriority 2
 
-      - name: Prepare Test Logic
-        id: test_prep
+      - name: Read Test Classes
+        id: read_tests
         run: |
-          if [ -f tests_to_run.txt ]; then
-            TESTS=$(grep -v '^$' tests_to_run.txt | tr '\n' ',' | sed 's/,$//')
-          else
-            TESTS=""
+          if [ ! -f tests_to_run.txt ]; then
+            echo "tests_to_run.txt not found"
+            exit 1
           fi
 
-          if [ -n "$TESTS" ]; then
-            echo "mode=specified" >> $GITHUB_OUTPUT
-            echo "list=$TESTS" >> $GITHUB_OUTPUT
-          elif [ "${{ steps.metadata_check.outputs.apex }}" == "true" ]; then
-            echo "mode=local" >> $GITHUB_OUTPUT
-          else
-            echo "mode=none" >> $GITHUB_OUTPUT
+          TEST_CLASSES=$(grep -v '^$' tests_to_run.txt | tr '\n' ',' | sed 's/,$//')
+
+          if [ -z "$TEST_CLASSES" ]; then
+            echo "No test classes defined"
+            exit 1
           fi
+
+          echo "Tests to run: $TEST_CLASSES"
+
+          echo "tests=$TEST_CLASSES" >> $GITHUB_OUTPUT
 
       - name: Validate Deployment (Dev/UAT)
         if: github.ref != 'refs/heads/main'
         run: |
           echo "Running Validation Deployment"
 
-          if [ "${{ steps.test_prep.outputs.mode }}" == "specified" ]; then
-            sf project deploy validate \
+          sf project deploy validate \
             --source-dir force-app \
             --test-level RunSpecifiedTests \
-            --tests ${{ steps.test_prep.outputs.list }} \
+            --tests ${{ steps.read_tests.outputs.tests }} \
             --target-org target_org \
             --verbose
-
-          elif [ "${{ steps.test_prep.outputs.mode }}" == "local" ]; then
-            sf project deploy validate \
-            --source-dir force-app \
-            --test-level RunLocalTests \
-            --target-org target_org \
-            --verbose
-
-          else
-            sf project deploy validate \
-            --source-dir force-app \
-            --target-org target_org \
-            --verbose
-          fi
 
       - name: Run Apex Tests With Coverage
         if: steps.metadata_check.outputs.apex == 'true'
@@ -110,11 +96,12 @@ jobs:
           echo "Running Apex Tests with Coverage"
 
           sf apex run test \
-          --test-level RunLocalTests \
-          --code-coverage \
-          --result-format json \
-          --output-dir test-results \
-          --target-org target_org
+            --test-level RunSpecifiedTests \
+            --tests ${{ steps.read_tests.outputs.tests }} \
+            --code-coverage \
+            --result-format json \
+            --output-dir test-results \
+            --target-org target_org
 
       - name: Show Class Coverage
         if: steps.metadata_check.outputs.apex == 'true'
@@ -142,27 +129,10 @@ jobs:
         run: |
           echo "Deploying to Salesforce Org"
 
-          if [ "${{ steps.test_prep.outputs.mode }}" == "specified" ]; then
-            sf project deploy start \
+          sf project deploy start \
             --source-dir force-app \
             --test-level RunSpecifiedTests \
-            --tests ${{ steps.test_prep.outputs.list }} \
+            --tests ${{ steps.read_tests.outputs.tests }} \
             --target-org target_org \
             --wait 30 \
             --verbose
-
-          elif [ "${{ steps.test_prep.outputs.mode }}" == "local" ]; then
-            sf project deploy start \
-            --source-dir force-app \
-            --test-level RunLocalTests \
-            --target-org target_org \
-            --wait 30 \
-            --verbose
-
-          else
-            sf project deploy start \
-            --source-dir force-app \
-            --target-org target_org \
-            --wait 30 \
-            --verbose
-          fi
