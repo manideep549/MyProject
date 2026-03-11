@@ -10,6 +10,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Important for detecting changes
 
       - name: Install Salesforce CLI
         run: npm install @salesforce/cli --global
@@ -19,40 +21,55 @@ jobs:
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
           sf org login sfdx-url -f auth_url.txt -a target_org
 
+      - name: Detect Apex Changes
+        id: apex_check
+        run: |
+          # Check if any .cls or .trigger files were changed in this push
+          APEX_CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E '\.cls$|\.trigger$' || true)
+          if [ -n "$APEX_CHANGED" ]; then
+            echo "apex_found=true" >> $GITHUB_OUTPUT
+          else
+            echo "apex_found=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Prepare Test Logic
         id: test_prep
         run: |
+          # Read tests from file
           if [ -f tests_to_run.txt ]; then
             TESTS=$(grep -v '^$' tests_to_run.txt | tr '\n' ',' | sed 's/,$//')
           else
             TESTS=""
           fi
           
-          if [ -z "$TESTS" ]; then
-            echo "test_mode=none" >> $GITHUB_OUTPUT
+          # Decide test level
+          if [ -n "$TESTS" ]; then
+            echo "mode=specified" >> $GITHUB_OUTPUT
+            echo "list=$TESTS" >> $GITHUB_OUTPUT
+          elif [ "${{ steps.apex_check.outputs.apex_found }}" == "true" ]; then
+            echo "mode=local" >> $GITHUB_OUTPUT
           else
-            echo "test_mode=specified" >> $GITHUB_OUTPUT
-            echo "test_list=$TESTS" >> $GITHUB_OUTPUT
+            echo "mode=none" >> $GITHUB_OUTPUT
           fi
 
       - name: Validation (Dev/UAT)
         if: github.ref != 'refs/heads/main'
         run: |
-          if [ "${{ steps.test_prep.outputs.test_mode }}" == "none" ]; then
-            # No test level flag used
-            sf project deploy validate --source-dir force-app --target-org target_org
+          if [ "${{ steps.test_prep.outputs.mode }}" == "specified" ]; then
+            sf project deploy validate --source-dir force-app --test-level RunSpecifiedTests --tests ${{ steps.test_prep.outputs.list }} --target-org target_org
+          elif [ "${{ steps.test_prep.outputs.mode }}" == "local" ]; then
+            sf project deploy validate --source-dir force-app --test-level RunLocalTests --target-org target_org
           else
-            # Run specific tests
-            sf project deploy validate --source-dir force-app --test-level RunSpecifiedTests --tests ${{ steps.test_prep.outputs.test_list }} --target-org target_org
+            sf project deploy validate --source-dir force-app --target-org target_org
           fi
 
       - name: Deployment (Main Branch)
         if: github.ref == 'refs/heads/main'
         run: |
-          if [ "${{ steps.test_prep.outputs.test_mode }}" == "none" ]; then
-            # No test level flag used
-            sf project deploy start --source-dir force-app --target-org target_org --wait 30
+          if [ "${{ steps.test_prep.outputs.mode }}" == "specified" ]; then
+            sf project deploy start --source-dir force-app --test-level RunSpecifiedTests --tests ${{ steps.test_prep.outputs.list }} --target-org target_org --wait 30
+          elif [ "${{ steps.test_prep.outputs.mode }}" == "local" ]; then
+            sf project deploy start --source-dir force-app --test-level RunLocalTests --target-org target_org --wait 30
           else
-            # Run specific tests
-            sf project deploy start --source-dir force-app --test-level RunSpecifiedTests --tests ${{ steps.test_prep.outputs.test_list }} --target-org target_org --wait 30
+            sf project deploy start --source-dir force-app --target-org target_org --wait 30
           fi
