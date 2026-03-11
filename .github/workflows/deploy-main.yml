@@ -2,74 +2,165 @@ name: Salesforce DevOps Pipeline
 
 on:
   push:
-    branches: [ main, uat, dev ]
+    branches: [main, uat, dev]
 
 jobs:
   salesforce-process:
     runs-on: ubuntu-latest
+
     steps:
+
       - name: Checkout Code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # Important for detecting changes
+          fetch-depth: 0
 
       - name: Install Salesforce CLI
         run: npm install @salesforce/cli --global
 
-      - name: Authenticate
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Install PMD
+        run: |
+          wget https://github.com/pmd/pmd/releases/download/pmd_releases/6.55.0/pmd-bin-6.55.0.zip
+          unzip pmd-bin-6.55.0.zip
+          echo "$PWD/pmd-bin-6.55.0/bin" >> $GITHUB_PATH
+
+      - name: Authenticate Salesforce Org
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
           sf org login sfdx-url -f auth_url.txt -a target_org
 
-      - name: Detect Apex Changes
-        id: apex_check
+      - name: Detect Metadata Changes
+        id: metadata_check
         run: |
-          # Check if any .cls or .trigger files were changed in this push
-          APEX_CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E '\.cls$|\.trigger$' || true)
-          if [ -n "$APEX_CHANGED" ]; then
-            echo "apex_found=true" >> $GITHUB_OUTPUT
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+
+          echo "Changed Files:"
+          echo "$CHANGED_FILES"
+
+          if echo "$CHANGED_FILES" | grep -E '\.cls$|\.trigger$'; then
+            echo "apex=true" >> $GITHUB_OUTPUT
           else
-            echo "apex_found=false" >> $GITHUB_OUTPUT
+            echo "apex=false" >> $GITHUB_OUTPUT
           fi
+
+      - name: Run Apex PMD Scan
+        run: |
+          echo "Running Apex PMD Scan"
+          pmd -d force-app \
+          -R category/apex/bestpractices.xml,category/apex/design.xml \
+          -f text \
+          -language apex
 
       - name: Prepare Test Logic
         id: test_prep
         run: |
-          # Read tests from file
           if [ -f tests_to_run.txt ]; then
             TESTS=$(grep -v '^$' tests_to_run.txt | tr '\n' ',' | sed 's/,$//')
           else
             TESTS=""
           fi
-          
-          # Decide test level
+
           if [ -n "$TESTS" ]; then
             echo "mode=specified" >> $GITHUB_OUTPUT
             echo "list=$TESTS" >> $GITHUB_OUTPUT
-          elif [ "${{ steps.apex_check.outputs.apex_found }}" == "true" ]; then
+          elif [ "${{ steps.metadata_check.outputs.apex }}" == "true" ]; then
             echo "mode=local" >> $GITHUB_OUTPUT
           else
             echo "mode=none" >> $GITHUB_OUTPUT
           fi
 
-      - name: Validation (Dev/UAT)
+      - name: Validate Deployment (Dev/UAT)
         if: github.ref != 'refs/heads/main'
         run: |
+          echo "Running Validation Deployment"
+
           if [ "${{ steps.test_prep.outputs.mode }}" == "specified" ]; then
-            sf project deploy validate --source-dir force-app --test-level RunSpecifiedTests --tests ${{ steps.test_prep.outputs.list }} --target-org target_org
+            sf project deploy validate \
+            --source-dir force-app \
+            --test-level RunSpecifiedTests \
+            --tests ${{ steps.test_prep.outputs.list }} \
+            --target-org target_org \
+            --verbose
+
           elif [ "${{ steps.test_prep.outputs.mode }}" == "local" ]; then
-            sf project deploy validate --source-dir force-app --test-level RunLocalTests --target-org target_org
+            sf project deploy validate \
+            --source-dir force-app \
+            --test-level RunLocalTests \
+            --target-org target_org \
+            --verbose
+
           else
-            sf project deploy validate --source-dir force-app --target-org target_org
+            sf project deploy validate \
+            --source-dir force-app \
+            --target-org target_org \
+            --verbose
           fi
 
-      - name: Deployment (Main Branch)
+      - name: Run Apex Tests With Coverage
+        if: steps.metadata_check.outputs.apex == 'true'
+        run: |
+          echo "Running Apex Tests with Coverage"
+
+          sf apex run test \
+          --test-level RunLocalTests \
+          --code-coverage \
+          --result-format json \
+          --output-dir test-results \
+          --target-org target_org
+
+      - name: Show Class Coverage
+        if: steps.metadata_check.outputs.apex == 'true'
+        run: |
+          echo "Class Coverage Details"
+
+          cat test-results/test-result-*.json | jq '.tests[] | {Class: .apexClass.name, Outcome: .outcome}'
+
+      - name: Validate Code Coverage >= 76
+        if: steps.metadata_check.outputs.apex == 'true'
+        run: |
+          COVERAGE=$(jq '.summary.orgWideCoverage' test-results/test-result-*.json)
+
+          echo "Current Coverage: $COVERAGE%"
+
+          if (( $(echo "$COVERAGE < 76" | bc -l) )); then
+            echo "Code coverage below 76%. Failing pipeline."
+            exit 1
+          else
+            echo "Coverage requirement satisfied."
+          fi
+
+      - name: Deploy to Org (Main Branch)
         if: github.ref == 'refs/heads/main'
         run: |
+          echo "Deploying to Salesforce Org"
+
           if [ "${{ steps.test_prep.outputs.mode }}" == "specified" ]; then
-            sf project deploy start --source-dir force-app --test-level RunSpecifiedTests --tests ${{ steps.test_prep.outputs.list }} --target-org target_org --wait 30
+            sf project deploy start \
+            --source-dir force-app \
+            --test-level RunSpecifiedTests \
+            --tests ${{ steps.test_prep.outputs.list }} \
+            --target-org target_org \
+            --wait 30 \
+            --verbose
+
           elif [ "${{ steps.test_prep.outputs.mode }}" == "local" ]; then
-            sf project deploy start --source-dir force-app --test-level RunLocalTests --target-org target_org --wait 30
+            sf project deploy start \
+            --source-dir force-app \
+            --test-level RunLocalTests \
+            --target-org target_org \
+            --wait 30 \
+            --verbose
+
           else
-            sf project deploy start --source-dir force-app --target-org target_org --wait 30
+            sf project deploy start \
+            --source-dir force-app \
+            --target-org target_org \
+            --wait 30 \
+            --verbose
           fi
