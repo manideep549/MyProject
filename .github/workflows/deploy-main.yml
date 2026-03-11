@@ -23,7 +23,6 @@ jobs:
         id: test_prep
         run: |
           # Read lines, strip whitespace, and create a comma-separated list
-          # We check if file exists and has content
           if [ -f tests_to_run.txt ]; then
             TESTS=$(grep -v '^$' tests_to_run.txt | tr '\n' ',' | sed 's/,$//')
           else
@@ -31,7 +30,7 @@ jobs:
           fi
           
           if [ -z "$TESTS" ]; then
-            echo "No tests found in file. Setting test level to NoTestRun."
+            echo "No tests found. Skipping test execution."
             echo "test_level=NoTestRun" >> $GITHUB_OUTPUT
             echo "test_list=" >> $GITHUB_OUTPUT
           else
