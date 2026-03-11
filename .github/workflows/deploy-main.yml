@@ -49,17 +49,19 @@ jobs:
       - name: Read Test Classes
         id: tests
         run: |
-          if [ ! -f tests_to_run.txt ]; then
-            echo "Error: tests_to_run.txt not found."
+          # Updated file name to Testclass
+          if [ ! -f Testclass ]; then
+            echo "Error: Testclass file not found."
             exit 1
           fi
           
-          # This strips whitespace, removes empty lines, and joins classes with a comma
-          # while ensuring no trailing comma exists at the end.
-          TESTS=$(grep -v '^$' tests_to_run.txt | xargs | tr ' ' ',')
+          # 1. sed removes Windows line endings (\r)
+          # 2. grep removes empty lines
+          # 3. xargs/tr creates a clean comma-separated list with no trailing comma
+          TESTS=$(sed 's/\r//g' Testclass | grep -v '^$' | xargs | tr ' ' ',')
           
           if [ -z "$TESTS" ]; then
-            echo "Error: No test classes found in tests_to_run.txt"
+            echo "Error: No test classes found in Testclass"
             exit 1
           fi
 
@@ -98,7 +100,6 @@ jobs:
 
       - name: Enforce 76 Percent Coverage
         run: |
-          # Use jq to extract the coverage percentage and check against threshold
           COVERAGE=$(jq '.summary.orgWideCoverage' test-results/test-result-*.json | tr -d '"%')
           echo "Org Coverage: $COVERAGE%"
           
