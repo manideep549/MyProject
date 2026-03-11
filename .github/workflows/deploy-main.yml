@@ -21,10 +21,10 @@ jobs:
     - name: Install Salesforce CLI
       run: npm install @salesforce/cli --global
 
-    - name: Setup Java (Required for PMD)
+    - name: Setup Java
       uses: actions/setup-java@v3
       with:
-        distribution: 'temurin'
+        distribution: temurin
         java-version: '11'
 
     - name: Install PMD
@@ -47,66 +47,55 @@ jobs:
           -f text \
           -minimumpriority 2
 
-    - name: Read Test Classes from tests_to_run.txt
+    - name: Read Tests From File
       id: tests
       run: |
-        if [ ! -f tests_to_run.txt ]; then
-          echo "tests_to_run.txt not found"
-          exit 1
-        fi
-
         TESTS=$(grep -v '^$' tests_to_run.txt | tr '\n' ',' | sed 's/,$//')
-
-        echo "Tests to run: $TESTS"
-
+        echo "Tests: $TESTS"
         echo "test_classes=$TESTS" >> $GITHUB_OUTPUT
 
-    - name: Validate Deployment (DEV / UAT)
-      if: github.ref != 'refs/heads/main'
+    - name: Deploy Metadata to Org
       run: |
-        echo "Validating deployment..."
+        echo "Deploying metadata first so tests exist in org"
 
-        sf project deploy validate \
+        sf project deploy start \
           --source-dir force-app \
-          --test-level RunSpecifiedTests \
-          --tests "${{ steps.tests.outputs.test_classes }}" \
           --target-org target_org \
+          --wait 30 \
           --verbose
 
-    - name: Run Apex Tests with Coverage
+    - name: Run Apex Tests With Coverage
       run: |
         echo "Running Apex Tests"
 
         sf apex run test \
           --tests "${{ steps.tests.outputs.test_classes }}" \
+          --target-org target_org \
+          --wait 30 \
           --code-coverage \
           --result-format json \
-          --output-dir test-results \
-          --target-org target_org
+          --output-dir test-results
 
-    - name: Show Coverage Report
+    - name: Show Coverage
       run: |
-        echo "Apex Coverage Report"
-
+        echo "Coverage Summary"
         jq '.summary' test-results/test-result-*.json
 
-    - name: Validate Code Coverage (Minimum 76%)
+    - name: Validate Coverage >= 76
       run: |
         COVERAGE=$(jq '.summary.orgWideCoverage' test-results/test-result-*.json)
 
-        echo "Current Coverage: $COVERAGE%"
+        echo "Coverage: $COVERAGE%"
 
         if (( $(echo "$COVERAGE < 76" | bc -l) )); then
-          echo "Code coverage is below 76%. Failing pipeline."
+          echo "Coverage below 76%. Failing pipeline."
           exit 1
-        else
-          echo "Coverage requirement satisfied."
         fi
 
-    - name: Deploy to Salesforce (MAIN Branch)
+    - name: Deploy to Main Org
       if: github.ref == 'refs/heads/main'
       run: |
-        echo "Deploying to Salesforce Org"
+        echo "Deploying to Main Branch Org"
 
         sf project deploy start \
           --source-dir force-app \
