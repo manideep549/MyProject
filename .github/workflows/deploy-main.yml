@@ -1,0 +1,48 @@
+name: Salesforce DevOps Pipeline
+
+on:
+  push:
+    branches: [ main, uat, dev ]
+
+jobs:
+  salesforce-process:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Install Salesforce CLI
+        run: npm install @salesforce/cli --global
+
+      - name: Authenticate
+        run: |
+          echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
+          sf org login sfdx-url -f auth_url.txt -a target_org
+
+      - name: Prepare Test Classes
+        id: test_prep
+        run: |
+          # Convert newline list to comma-separated
+          TESTS=$(cat tests_to_run.txt | tr '\n' ',' | sed 's/,$//')
+          echo "test_list=$TESTS" >> $GITHUB_OUTPUT
+
+      - name: Validation (Dev/UAT)
+        if: github.ref != 'refs/heads/main'
+        run: |
+          sf project deploy validate \
+            --source-dir force-app \
+            --test-level RunSpecifiedTests \
+            --tests ${{ steps.test_prep.outputs.test_list }} \
+            --target-org target_org
+
+      - name: Deploy (Main)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          # The --wait 30 ensures the CLI waits for results
+          # Salesforce requires 75%, so 76% will pass standard checks
+          sf project deploy start \
+            --source-dir force-app \
+            --test-level RunSpecifiedTests \
+            --tests ${{ steps.test_prep.outputs.test_list }} \
+            --target-org target_org \
+            --wait 30
