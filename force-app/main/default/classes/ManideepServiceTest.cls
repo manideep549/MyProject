@@ -1,5 +1,5 @@
 @isTest
-private class ManideepServiceTest {
+private class ServiceTest {
 
     @isTest
     static void testGetGreeting() {
