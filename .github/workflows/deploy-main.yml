@@ -2,137 +2,116 @@ name: Salesforce DevOps Pipeline
 
 on:
   push:
-    branches: [main, uat, dev]
+    branches:
+      - main
+      - dev
+      - uat
 
 jobs:
-  salesforce-process:
+  salesforce-ci:
     runs-on: ubuntu-latest
 
     steps:
 
-      - name: Checkout Code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
 
-      - name: Install Salesforce CLI
-        run: npm install @salesforce/cli --global
+    - name: Install Salesforce CLI
+      run: npm install @salesforce/cli --global
 
-      - name: Setup Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '11'
+    - name: Setup Java (Required for PMD)
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '11'
 
-      - name: Install PMD
-        run: |
-          wget https://github.com/pmd/pmd/releases/download/pmd_releases/6.55.0/pmd-bin-6.55.0.zip
-          unzip pmd-bin-6.55.0.zip
-          echo "$PWD/pmd-bin-6.55.0/bin" >> $GITHUB_PATH
+    - name: Install PMD
+      run: |
+        wget https://github.com/pmd/pmd/releases/download/pmd_releases/6.55.0/pmd-bin-6.55.0.zip
+        unzip pmd-bin-6.55.0.zip
+        echo "$PWD/pmd-bin-6.55.0/bin" >> $GITHUB_PATH
 
-      - name: Authenticate Salesforce Org
-        run: |
-          echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
-          sf org login sfdx-url -f auth_url.txt -a target_org
+    - name: Authenticate Salesforce Org
+      run: |
+        echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
+        sf org login sfdx-url -f auth_url.txt -a target_org
 
-      - name: Detect Metadata Changes
-        id: metadata_check
-        run: |
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
-
-          echo "Changed Files:"
-          echo "$CHANGED_FILES"
-
-          if echo "$CHANGED_FILES" | grep -E '\.cls$|\.trigger$'; then
-            echo "apex=true" >> $GITHUB_OUTPUT
-          else
-            echo "apex=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Run Apex PMD Scan
-        run: |
-          echo "Running Apex PMD Scan"
-
-          pmd-bin-6.55.0/bin/run.sh pmd \
+    - name: Run Apex PMD Scan
+      run: |
+        echo "Running Apex PMD Scan"
+        pmd-bin-6.55.0/bin/run.sh pmd \
           -d force-app \
           -R category/apex/bestpractices.xml,category/apex/design.xml \
           -f text \
           -minimumpriority 2
 
-      - name: Read Test Classes
-        id: read_tests
-        run: |
-          if [ ! -f tests_to_run.txt ]; then
-            echo "tests_to_run.txt not found"
-            exit 1
-          fi
+    - name: Read Test Classes from tests_to_run.txt
+      id: tests
+      run: |
+        if [ ! -f tests_to_run.txt ]; then
+          echo "tests_to_run.txt not found"
+          exit 1
+        fi
 
-          TEST_CLASSES=$(grep -v '^$' tests_to_run.txt | tr '\n' ',' | sed 's/,$//')
+        TESTS=$(grep -v '^$' tests_to_run.txt | tr '\n' ',' | sed 's/,$//')
 
-          if [ -z "$TEST_CLASSES" ]; then
-            echo "No test classes defined"
-            exit 1
-          fi
+        echo "Tests to run: $TESTS"
 
-          echo "Tests to run: $TEST_CLASSES"
+        echo "test_classes=$TESTS" >> $GITHUB_OUTPUT
 
-          echo "tests=$TEST_CLASSES" >> $GITHUB_OUTPUT
+    - name: Validate Deployment (DEV / UAT)
+      if: github.ref != 'refs/heads/main'
+      run: |
+        echo "Validating deployment..."
 
-      - name: Validate Deployment (Dev/UAT)
-        if: github.ref != 'refs/heads/main'
-        run: |
-          echo "Running Validation Deployment"
+        sf project deploy validate \
+          --source-dir force-app \
+          --test-level RunSpecifiedTests \
+          --tests "${{ steps.tests.outputs.test_classes }}" \
+          --target-org target_org \
+          --verbose
 
-          sf project deploy validate \
-            --source-dir force-app \
-            --test-level RunSpecifiedTests \
-            --tests ${{ steps.read_tests.outputs.tests }} \
-            --target-org target_org \
-            --verbose
+    - name: Run Apex Tests with Coverage
+      run: |
+        echo "Running Apex Tests"
 
-      - name: Run Apex Tests With Coverage
-        if: steps.metadata_check.outputs.apex == 'true'
-        run: |
-          echo "Running Apex Tests with Coverage"
+        sf apex run test \
+          --tests "${{ steps.tests.outputs.test_classes }}" \
+          --code-coverage \
+          --result-format json \
+          --output-dir test-results \
+          --target-org target_org
 
-          sf apex run test \
-            --test-level RunSpecifiedTests \
-            --tests ${{ steps.read_tests.outputs.tests }} \
-            --code-coverage \
-            --result-format json \
-            --output-dir test-results \
-            --target-org target_org
+    - name: Show Coverage Report
+      run: |
+        echo "Apex Coverage Report"
 
-      - name: Show Class Coverage
-        if: steps.metadata_check.outputs.apex == 'true'
-        run: |
-          echo "Class Coverage Details"
+        jq '.summary' test-results/test-result-*.json
 
-          cat test-results/test-result-*.json | jq '.tests[] | {Class: .apexClass.name, Outcome: .outcome}'
+    - name: Validate Code Coverage (Minimum 76%)
+      run: |
+        COVERAGE=$(jq '.summary.orgWideCoverage' test-results/test-result-*.json)
 
-      - name: Validate Code Coverage >= 76
-        if: steps.metadata_check.outputs.apex == 'true'
-        run: |
-          COVERAGE=$(jq '.summary.orgWideCoverage' test-results/test-result-*.json)
+        echo "Current Coverage: $COVERAGE%"
 
-          echo "Current Coverage: $COVERAGE%"
+        if (( $(echo "$COVERAGE < 76" | bc -l) )); then
+          echo "Code coverage is below 76%. Failing pipeline."
+          exit 1
+        else
+          echo "Coverage requirement satisfied."
+        fi
 
-          if (( $(echo "$COVERAGE < 76" | bc -l) )); then
-            echo "Code coverage below 76%. Failing pipeline."
-            exit 1
-          else
-            echo "Coverage requirement satisfied."
-          fi
+    - name: Deploy to Salesforce (MAIN Branch)
+      if: github.ref == 'refs/heads/main'
+      run: |
+        echo "Deploying to Salesforce Org"
 
-      - name: Deploy to Org (Main Branch)
-        if: github.ref == 'refs/heads/main'
-        run: |
-          echo "Deploying to Salesforce Org"
-
-          sf project deploy start \
-            --source-dir force-app \
-            --test-level RunSpecifiedTests \
-            --tests ${{ steps.read_tests.outputs.tests }} \
-            --target-org target_org \
-            --wait 30 \
-            --verbose
+        sf project deploy start \
+          --source-dir force-app \
+          --test-level RunSpecifiedTests \
+          --tests "${{ steps.tests.outputs.test_classes }}" \
+          --target-org target_org \
+          --wait 30 \
+          --verbose
