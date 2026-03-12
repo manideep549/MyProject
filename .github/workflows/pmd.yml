@@ -32,28 +32,32 @@ jobs:
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
           sf org login sfdx-url --sfdx-url-file auth_url.txt --set-default --alias testOrg
 
-      # STAGE: Test Class Execution & Error Showing
-      - name: 'Run Apex Tests & Show Errors'
-        id: run_tests
+      # NEW STEP: Read the 'testclass' file and format for CLI
+      - name: 'Prepare Test Class List'
+        id: prepare_tests
         run: |
-          echo "Running Apex Tests..."
-          # This prints the human-readable errors directly to the GitHub log
-          sf apex test run --target-org testOrg --wait 30 --result-format human --code-coverage --detailed-coverage
+          # Reads the file 'testclass', removes empty lines, and joins names with commas
+          TEST_LIST=$(grep -v '^$' testclass | tr '\n' ',' | sed 's/,$//')
+          echo "Tests to run: $TEST_LIST"
+          echo "TEST_LIST=$TEST_LIST" >> $GITHUB_ENV
+
+      # STAGE: Test Class Execution & Error Showing (Updated with --tests)
+      - name: 'Run Apex Tests & Show Errors'
+        run: |
+          echo "Running specific tests from file..."
+          sf apex test run --target-org testOrg --wait 30 --tests ${{ env.TEST_LIST }} --result-format human --code-coverage --detailed-coverage
         continue-on-error: false
 
-      # STAGE: Test Percentage Showing & 75% Gate
+      # STAGE: Test Percentage Showing & 75% Gate (Updated with --tests)
       - name: 'Check Test Percentage'
         run: |
-          # Generate JSON to extract the exact percentage for the gate
-          sf apex test run --target-org testOrg --result-format json --code-coverage > coverage-results.json
+          sf apex test run --target-org testOrg --tests ${{ env.TEST_LIST }} --result-format json --code-coverage > coverage-results.json
           
-          # Extracting the percentage value
           COVERAGE=$(jq '.result.summary.testRunCoverage' coverage-results.json | tr -d '"%')
           echo "----------------------------------------------"
           echo "REPORTED CODE COVERAGE: $COVERAGE%"
           echo "----------------------------------------------"
           
-          # Numeric check for 75% threshold
           if [ "$(echo "$COVERAGE < 75" | bc)" -eq 1 ]; then
             echo "FAILED: Coverage is $COVERAGE%, which is below the 75% requirement."
             exit 1
