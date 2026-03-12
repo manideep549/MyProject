@@ -33,24 +33,6 @@ jobs:
           echo "Running validation for branch: ${{ github.ref_name }}"
           sf project deploy validate --source-dir force-app --target-org targetOrg --wait 30
         continue-on-error: false
-
-      # STAGE: Test Class Execution & Coverage Check (Separate Stage)
-      - name: 'Run Apex Tests and Check Coverage'
-        id: apex_tests
-        run: |
-          # Running tests and generating a JSON report to parse coverage
-          sf apex test run --target-org targetOrg --wait 30 --result-format json --code-coverage --detailed-coverage > test-results.json
-          
-          # Extracting total coverage percentage (requires 'jq' which is pre-installed on ubuntu-latest)
-          COVERAGE=$(jq '.result.summary.testRunCoverage' test-results.json | tr -d '"%')
-          echo "Current Code Coverage: $COVERAGE%"
-          
-          if [ "$(echo "$COVERAGE < 75" | bc)" -eq 1 ]; then
-            echo "Error: Code coverage is $COVERAGE%, which is below the required 75%."
-            exit 1
-          fi
-        continue-on-error: false
-
       # STAGE: Deployment (Runs ONLY for Main branch if previous steps passed)
       - name: 'Deploy to Production'
         if: github.ref == 'refs/heads/main'

@@ -42,4 +42,4 @@
         <triggerType>RecordBeforeSave</triggerType>
     </start>
     <status>Active</status>
-</Flow>
+</Flow

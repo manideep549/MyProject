@@ -1,32 +1,61 @@
-name: PMD Code Analysis
+name: PMD Static Analysis and Apex Validation
 
 on:
   push:
-    branches: [dev, uat, main]
+    branches: [ dev, uat, main ]
+  pull_request:
+    branches: [ dev, uat, main ]
 
 jobs:
-  pmd-analysis:
+  quality-gate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      - name: 'Checkout source code'
+        uses: actions/checkout@v4
 
-      - name: Setup Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '11'
-
-      - name: Install PMD
+      - name: 'Install Salesforce CLI'
         run: |
-          wget https://github.com/pmd/pmd/releases/download/pmd_releases/6.55.0/pmd-bin-6.55.0.zip
-          unzip pmd-bin-6.55.0.zip
-          echo "$PWD/pmd-bin-6.55.0/bin" >> $GITHUB_PATH
+          npm install @salesforce/cli --global
+          sf version
 
-      - name: Run Apex PMD Scan
+      - name: 'Install PMD'
         run: |
-          pmd-bin-6.55.0/bin/run.sh pmd \
-            -d force-app \
-            -R category/apex/bestpractices.xml,category/apex/design.xml \
-            -f text \
-            -minimumpriority 2
+          wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F7.0.0/pmd-dist-7.0.0-bin.zip
+          unzip pmd-dist-7.0.0-bin.zip
+          echo "$(pwd)/pmd-bin-7.0.0/bin" >> $GITHUB_PATH
+
+      - name: 'Run PMD Scan'
+        run: pmd check --format text --rulesets category/apex/design.xml,category/apex/bestpractices.xml --dir force-app --exit-code 1
+
+      - name: 'Authenticate to Sandbox for Testing'
+        run: |
+          echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
+          sf org login sfdx-url --sfdx-url-file auth_url.txt --set-default --alias testOrg
+
+      # STAGE: Test Class Execution & Error Showing
+      - name: 'Run Apex Tests & Show Errors'
+        id: run_tests
+        run: |
+          echo "Running Apex Tests..."
+          # This prints the human-readable errors directly to the GitHub log
+          sf apex test run --target-org testOrg --wait 30 --result-format human --code-coverage --detailed-coverage
+        continue-on-error: false
+
+      # STAGE: Test Percentage Showing & 75% Gate
+      - name: 'Check Test Percentage'
+        run: |
+          # Generate JSON to extract the exact percentage for the gate
+          sf apex test run --target-org testOrg --result-format json --code-coverage > coverage-results.json
+          
+          # Extracting the percentage value
+          COVERAGE=$(jq '.result.summary.testRunCoverage' coverage-results.json | tr -d '"%')
+          echo "----------------------------------------------"
+          echo "REPORTED CODE COVERAGE: $COVERAGE%"
+          echo "----------------------------------------------"
+          
+          # Numeric check for 75% threshold
+          if [ "$(echo "$COVERAGE < 75" | bc)" -eq 1 ]; then
+            echo "FAILED: Coverage is $COVERAGE%, which is below the 75% requirement."
+            exit 1
+          fi
+        continue-on-error: false
