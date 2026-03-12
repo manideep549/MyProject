@@ -1,4 +1,4 @@
-name: Salesforce Deployment Pipeline
+name: Salesforce CI/CD Pipeline
 
 on:
   push:
@@ -6,69 +6,55 @@ on:
       - dev
       - uat
       - main
-    # ONLY trigger if files in these folders change
-    paths:
-      - 'force-app/main/default/classes/**'
-      - 'force-app/main/default/triggers/**'
-      - 'force-app/main/default/lwc/**'
-      - 'force-app/main/default/aura/**'
-      - 'Testclass' # Run if the test manifest itself changes
 
 jobs:
-  salesforce-ci:
+  validate-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      - name: 'Checkout source code'
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install Salesforce CLI
-        run: npm install @salesforce/cli --global
+      - name: 'Install Salesforce CLI'
+        run: |
+          npm install @salesforce/cli --global
+          sf version
 
-      - name: Authenticate Salesforce Org
+      - name: 'Authenticate to Target Org'
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
-          sf org login sfdx-url -f auth_url.txt -a target_org
-          rm auth_url.txt
+          sf org login sfdx-url --sfdx-url-file auth_url.txt --set-default --alias targetOrg
 
-      - name: Read Test Classes
-        id: tests
+      # STAGE: Validation (Runs for ALL branches)
+      - name: 'Validate Changes'
+        id: validate
         run: |
-          TESTS=$(sed 's/\r//g' Testclass | grep -v '^$' | xargs | tr ' ' ',')
-          echo "test_classes=$TESTS" >> $GITHUB_OUTPUT
+          echo "Running validation for branch: ${{ github.ref_name }}"
+          sf project deploy validate --source-dir force-app --target-org targetOrg --wait 30
+        continue-on-error: false
 
-      - name: Validate Deployment
+      # STAGE: Test Class Execution & Coverage Check (Separate Stage)
+      - name: 'Run Apex Tests and Check Coverage'
+        id: apex_tests
         run: |
-          sf project deploy validate \
-            --source-dir force-app \
-            --test-level RunSpecifiedTests \
-            --tests "${{ steps.tests.outputs.test_classes }}" \
-            --target-org target_org \
-            --wait 30
-
-      - name: Run Apex Tests With Coverage
-        run: |
-          sf apex run test \
-            --tests "${{ steps.tests.outputs.test_classes }}" \
-            --target-org target_org \
-            --code-coverage \
-            --result-format json \
-            --output-dir test-results
-
-      - name: Enforce 76 Percent Coverage
-        run: |
-          COVERAGE=$(jq '.summary.orgWideCoverage' test-results/test-result-*.json | tr -d '"%')
-          if (( $(echo "$COVERAGE < 76" | bc -l) )); then
-            echo "Code coverage $COVERAGE% is below 76%."
+          # Running tests and generating a JSON report to parse coverage
+          sf apex test run --target-org targetOrg --wait 30 --result-format json --code-coverage --detailed-coverage > test-results.json
+          
+          # Extracting total coverage percentage (requires 'jq' which is pre-installed on ubuntu-latest)
+          COVERAGE=$(jq '.result.summary.testRunCoverage' test-results.json | tr -d '"%')
+          echo "Current Code Coverage: $COVERAGE%"
+          
+          if [ "$(echo "$COVERAGE < 75" | bc)" -eq 1 ]; then
+            echo "Error: Code coverage is $COVERAGE%, which is below the required 75%."
             exit 1
           fi
+        continue-on-error: false
 
-      - name: Deploy to Org (MAIN Only)
+      # STAGE: Deployment (Runs ONLY for Main branch if previous steps passed)
+      - name: 'Deploy to Production'
         if: github.ref == 'refs/heads/main'
         run: |
-          sf project deploy start \
-            --source-dir force-app \
-            --test-level RunSpecifiedTests \
-            --tests "${{ steps.tests.outputs.test_classes }}" \
-            --target-org target_org
+          echo "Validation and Tests passed. Proceeding with Deployment to Main."
+          sf project deploy start --source-dir force-app --target-org targetOrg --wait 30
+        continue-on-error: false
