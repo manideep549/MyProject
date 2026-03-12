@@ -24,40 +24,49 @@ jobs:
           unzip pmd-dist-7.0.0-bin.zip
           echo "$(pwd)/pmd-bin-7.0.0/bin" >> $GITHUB_PATH
 
+      # FIXED PMD STAGE
       - name: 'Run PMD Scan'
-        run: pmd check --format text --rulesets category/apex/design.xml,category/apex/bestpractices.xml --dir force-app --exit-code 1
+        run: |
+          pmd check --dir force-app --rulesets category/apex/design.xml,category/apex/bestpractices.xml --format text --fail-on-violation
 
       - name: 'Authenticate to Sandbox for Testing'
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
           sf org login sfdx-url --sfdx-url-file auth_url.txt --set-default --alias testOrg
 
-      # NEW STEP: Read the 'testclass' file and format for CLI
+      # STAGE: Prepare Test Class List from file
       - name: 'Prepare Test Class List'
         id: prepare_tests
         run: |
-          # Reads the file 'testclass', removes empty lines, and joins names with commas
-          TEST_LIST=$(grep -v '^$' testclass | tr '\n' ',' | sed 's/,$//')
+          # Check if file exists first
+          if [ ! -f testclass ]; then
+            echo "Error: testclass file not found!"
+            exit 1
+          fi
+          # Read file, remove empty lines/spaces, and join with commas
+          TEST_LIST=$(grep -v '^$' testclass | tr -d '\r' | tr '\n' ',' | sed 's/,$//')
           echo "Tests to run: $TEST_LIST"
           echo "TEST_LIST=$TEST_LIST" >> $GITHUB_ENV
 
-      # STAGE: Test Class Execution & Error Showing (Updated with --tests)
+      # STAGE: Test Class Execution & Error Showing
       - name: 'Run Apex Tests & Show Errors'
         run: |
-          echo "Running specific tests from file..."
-          sf apex test run --target-org testOrg --wait 30 --tests ${{ env.TEST_LIST }} --result-format human --code-coverage --detailed-coverage
+          echo "Running tests: ${{ env.TEST_LIST }}"
+          sf apex test run --target-org testOrg --wait 30 --tests "${{ env.TEST_LIST }}" --result-format human --code-coverage --detailed-coverage
         continue-on-error: false
 
-      # STAGE: Test Percentage Showing & 75% Gate (Updated with --tests)
+      # STAGE: Test Percentage Showing & 75% Gate
       - name: 'Check Test Percentage'
         run: |
-          sf apex test run --target-org testOrg --tests ${{ env.TEST_LIST }} --result-format json --code-coverage > coverage-results.json
+          sf apex test run --target-org testOrg --tests "${{ env.TEST_LIST }}" --result-format json --code-coverage > coverage-results.json
           
+          # Extracting the percentage value
           COVERAGE=$(jq '.result.summary.testRunCoverage' coverage-results.json | tr -d '"%')
           echo "----------------------------------------------"
           echo "REPORTED CODE COVERAGE: $COVERAGE%"
           echo "----------------------------------------------"
           
+          # Numeric check for 75% threshold
           if [ "$(echo "$COVERAGE < 75" | bc)" -eq 1 ]; then
             echo "FAILED: Coverage is $COVERAGE%, which is below the 75% requirement."
             exit 1
