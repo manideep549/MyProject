@@ -18,6 +18,7 @@ private class ManideepServiceTest {
             Username='testuser' + System.currentTimeMillis() + '@test.com'
         );
 
+        
         insert testUser;
 
         System.runAs(testUser) {
