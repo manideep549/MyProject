@@ -1,4 +1,4 @@
-name: Salesforce PMD Validation & Code Coverage
+name: Salesforce PMD Validation & Test Coverage
 
 on:
   push:
@@ -7,12 +7,13 @@ on:
     branches: [dev, uat, main]
 
 jobs:
-  salesforce-quality-gate:
+  salesforce-ci:
     runs-on: ubuntu-latest
 
     steps:
 
-    - name: Checkout Repository
+    # Checkout Repository
+    - name: Checkout Source Code
       uses: actions/checkout@v4
 
 
@@ -31,30 +32,30 @@ jobs:
         echo "$(pwd)/pmd-bin-7.0.0/bin" >> $GITHUB_PATH
 
 
-    # Install jq and bc for JSON processing
-    - name: Install Required Tools
+    # Install tools for JSON parsing
+    - name: Install jq
       run: |
         sudo apt-get update
-        sudo apt-get install jq bc -y
+        sudo apt-get install jq -y
 
 
-    #########################################################
+    ########################################################
     # STAGE 1 — PMD Static Code Analysis
-    #########################################################
+    ########################################################
 
-    - name: Run PMD Static Analysis
+    - name: Run PMD Scan
       run: |
-        echo "Running PMD Code Quality Scan..."
+        echo "Running PMD Static Analysis"
         pmd check \
-          --dir force-app \
-          --rulesets category/apex/design.xml,category/apex/bestpractices.xml \
-          --format text \
-          --fail-on-violation
+        --dir force-app \
+        --rulesets category/apex/design.xml,category/apex/bestpractices.xml \
+        --format text \
+        --fail-on-violation
 
 
-    #########################################################
+    ########################################################
     # STAGE 2 — Authenticate Salesforce Org
-    #########################################################
+    ########################################################
 
     - name: Authenticate Salesforce Org
       run: |
@@ -62,49 +63,56 @@ jobs:
         sf org login sfdx-url --sfdx-url-file auth.txt --set-default --alias ciOrg
 
 
-    #########################################################
-    # STAGE 3 — Read Test Classes from File
-    #########################################################
+    ########################################################
+    # STAGE 3 — Prepare Test Class Arguments
+    ########################################################
 
-    - name: Read Test Classes
+    - name: Prepare Test Classes
       run: |
 
         if [ ! -f "Testclass" ]; then
-          echo "ERROR: Testclass file not found!"
+          echo "ERROR: Testclass file not found"
           exit 1
         fi
 
-        TESTS=$(paste -sd "," Testclass)
+        TEST_ARGS=""
 
-        echo "Test Classes:"
-        echo $TESTS
+        while read line
+        do
+          if [ ! -z "$line" ]; then
+            TEST_ARGS="$TEST_ARGS --tests $line"
+          fi
+        done < Testclass
 
-        echo "TEST_LIST=$TESTS" >> $GITHUB_ENV
+        echo "Prepared Test Arguments:"
+        echo $TEST_ARGS
+
+        echo "TEST_ARGS=$TEST_ARGS" >> $GITHUB_ENV
 
 
-    #########################################################
+    ########################################################
     # STAGE 4 — Run Apex Tests (Error Stage)
-    #########################################################
+    ########################################################
 
     - name: Run Apex Tests
       run: |
 
-        echo "Running Apex Tests..."
+        echo "Running Apex Tests"
 
         sf apex test run \
           --target-org ciOrg \
-          --tests "$TEST_LIST" \
+          $TEST_ARGS \
           --wait 30 \
           --result-format json \
           --code-coverage \
           --output-dir test-results
 
-        echo "Test Execution Completed"
+        echo "Test execution finished"
 
 
-    #########################################################
+    ########################################################
     # STAGE 5 — Show Test Failures
-    #########################################################
+    ########################################################
 
     - name: Display Test Failures
       run: |
@@ -116,15 +124,15 @@ jobs:
         echo "Failing Tests: $FAILURES"
 
         if [ "$FAILURES" -gt 0 ]; then
-          echo "❌ Some tests failed"
+          echo "Some tests failed"
           jq '.result.tests[] | select(.Outcome=="Fail")' test-results/$FILE
           exit 1
         fi
 
 
-    #########################################################
-    # STAGE 6 — Code Coverage Validation
-    #########################################################
+    ########################################################
+    # STAGE 6 — Validate Code Coverage
+    ########################################################
 
     - name: Validate Code Coverage
       run: |
@@ -133,11 +141,11 @@ jobs:
 
         COVERAGE=$(jq '.result.summary.testRunCoverage' test-results/$FILE)
 
-        echo "Current Code Coverage: $COVERAGE%"
+        echo "Total Code Coverage: $COVERAGE%"
 
         if [ "$COVERAGE" -lt 75 ]; then
-          echo "❌ Code Coverage is below 75%"
+          echo "Code coverage below 75%"
           exit 1
         else
-          echo "✅ Code Coverage Requirement Met"
+          echo "Coverage requirement satisfied"
         fi

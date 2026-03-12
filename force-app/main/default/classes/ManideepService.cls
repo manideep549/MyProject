@@ -1,10 +1,7 @@
 public with sharing class ManideepService {
 
-    /**
-     * Returns a greeting message
-     */
-    public static String getGreeting() {
-        return 'Hello Manideep';
+    public static Integer addNumbers(Integer a, Integer b){
+        return a + b;
     }
 
 }
