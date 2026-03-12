@@ -1,0 +1,32 @@
+name: PMD Code Analysis
+
+on:
+  push:
+    branches: [dev, uat, main]
+
+jobs:
+  pmd-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Install PMD
+        run: |
+          wget https://github.com/pmd/pmd/releases/download/pmd_releases/6.55.0/pmd-bin-6.55.0.zip
+          unzip pmd-bin-6.55.0.zip
+          echo "$PWD/pmd-bin-6.55.0/bin" >> $GITHUB_PATH
+
+      - name: Run Apex PMD Scan
+        run: |
+          pmd-bin-6.55.0/bin/run.sh pmd \
+            -d force-app \
+            -R category/apex/bestpractices.xml,category/apex/design.xml \
+            -f text \
+            -minimumpriority 2

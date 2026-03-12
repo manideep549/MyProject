@@ -10,7 +10,6 @@ private class ServiceTest {
             WHERE Name = 'Standard User'
             LIMIT 1
         ];
-
         User testUser = new User(
             Alias = 'mtest',
             Email = 'manideep@test.com',
