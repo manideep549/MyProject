@@ -1,48 +1,103 @@
-name: Salesforce DevOps Pipeline
+name: Salesforce CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, uat, dev ]
+    branches:
+      - dev
+      - uat
+      - main
 
 jobs:
-  salesforce-process:
+
+  ########################################################
+  # JOB 1 — VALIDATION
+  ########################################################
+
+  validate:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Salesforce CLI
-        run: npm install @salesforce/cli --global
+        run: |
+          npm install @salesforce/cli --global
+          sf version
 
-      - name: Authenticate
+      - name: Authenticate to Target Org
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
-          sf org login sfdx-url -f auth_url.txt -a target_org
+          sf org login sfdx-url --sfdx-url-file auth_url.txt --set-default --alias targetOrg
 
-      - name: Prepare Test Classes
-        id: test_prep
-        run: |
-          # Convert newline list to comma-separated
-          TESTS=$(cat tests_to_run.txt | tr '\n' ',' | sed 's/,$//')
-          echo "test_list=$TESTS" >> $GITHUB_OUTPUT
+      ########################################################
+      # Detect Profile / PermissionSet Changes
+      ########################################################
 
-      - name: Validation (Dev/UAT)
-        if: github.ref != 'refs/heads/main'
+      - name: Detect Profile or PermissionSet Changes
         run: |
+
+          echo "Checking for sensitive metadata changes..."
+
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+
+          echo "$CHANGED_FILES"
+
+          if echo "$CHANGED_FILES" | grep -E "profiles|permissionsets"; then
+            echo "Sensitive metadata change detected"
+          else
+            echo "No sensitive metadata changes"
+          fi
+
+
+      ########################################################
+      # Validation
+      ########################################################
+
+      - name: Validate Changes
+        run: |
+          echo "Running validation for branch: ${{ github.ref_name }}"
+
           sf project deploy validate \
             --source-dir force-app \
-            --test-level RunSpecifiedTests \
-            --tests ${{ steps.test_prep.outputs.test_list }} \
-            --target-org target_org
+            --target-org targetOrg \
+            --wait 30
 
-      - name: Deploy (Main)
-        if: github.ref == 'refs/heads/main'
+
+  ########################################################
+  # JOB 2 — DEPLOYMENT (ONLY MAIN BRANCH)
+  ########################################################
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    environment: production
+
+    steps:
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Install Salesforce CLI
         run: |
-          # The --wait 30 ensures the CLI waits for results
-          # Salesforce requires 75%, so 76% will pass standard checks
+          npm install @salesforce/cli --global
+
+      - name: Authenticate to Target Org
+        run: |
+          echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
+          sf org login sfdx-url --sfdx-url-file auth_url.txt --set-default --alias targetOrg
+
+      - name: Deploy to Production
+        run: |
+
+          echo "Validation passed. Deploying to Production..."
+
           sf project deploy start \
             --source-dir force-app \
-            --test-level RunSpecifiedTests \
-            --tests ${{ steps.test_prep.outputs.test_list }} \
-            --target-org target_org \
+            --target-org targetOrg \
             --wait 30
