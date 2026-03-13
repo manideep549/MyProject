@@ -17,8 +17,6 @@ private class ManideepServiceTest {
             TimeZoneSidKey='America/Los_Angeles',
             Username='testuser' + System.currentTimeMillis() + '@test.com'
         );
-
-        
         insert testUser;
 
         System.runAs(testUser) {
