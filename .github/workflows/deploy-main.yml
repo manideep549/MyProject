@@ -8,7 +8,12 @@ on:
       - main
 
 jobs:
-  validate-and-deploy:
+
+  ########################################################
+  # JOB 1 — VALIDATION
+  ########################################################
+
+  validate:
     runs-on: ubuntu-latest
 
     steps:
@@ -18,64 +23,80 @@ jobs:
         with:
           fetch-depth: 0
 
-
       - name: Install Salesforce CLI
         run: |
           npm install @salesforce/cli --global
           sf version
-
 
       - name: Authenticate to Target Org
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
           sf org login sfdx-url --sfdx-url-file auth_url.txt --set-default --alias targetOrg
 
-
       ########################################################
-      # Detect Profile or PermissionSet Changes
+      # Detect Profile / PermissionSet Changes
       ########################################################
 
       - name: Detect Profile or PermissionSet Changes
-        id: metadata_check
         run: |
 
           echo "Checking for sensitive metadata changes..."
 
           CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
 
-          echo "Changed Files:"
           echo "$CHANGED_FILES"
 
           if echo "$CHANGED_FILES" | grep -E "profiles|permissionsets"; then
-            echo "PROFILE_APPROVAL_REQUIRED=true" >> $GITHUB_ENV
             echo "Sensitive metadata change detected"
           else
-            echo "PROFILE_APPROVAL_REQUIRED=false" >> $GITHUB_ENV
+            echo "No sensitive metadata changes"
           fi
 
 
       ########################################################
-      # Validation Stage
+      # Validation
       ########################################################
 
       - name: Validate Changes
         run: |
           echo "Running validation for branch: ${{ github.ref_name }}"
+
           sf project deploy validate \
             --source-dir force-app \
             --target-org targetOrg \
             --wait 30
 
 
-      ########################################################
-      # Deployment Stage (Main Branch Only)
-      ########################################################
+  ########################################################
+  # JOB 2 — DEPLOYMENT (ONLY MAIN BRANCH)
+  ########################################################
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    environment: production
+
+    steps:
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Install Salesforce CLI
+        run: |
+          npm install @salesforce/cli --global
+
+      - name: Authenticate to Target Org
+        run: |
+          echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
+          sf org login sfdx-url --sfdx-url-file auth_url.txt --set-default --alias targetOrg
 
       - name: Deploy to Production
-        if: github.ref == 'refs/heads/main'
-        environment: production
         run: |
+
           echo "Validation passed. Deploying to Production..."
+
           sf project deploy start \
             --source-dir force-app \
             --target-org targetOrg \
