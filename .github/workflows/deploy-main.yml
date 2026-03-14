@@ -9,9 +9,9 @@ on:
 
 jobs:
 
-  ########################################################
-  # VALIDATION JOB
-  ########################################################
+########################################################
+# VALIDATION JOB
+########################################################
 
   validate:
     runs-on: ubuntu-latest
@@ -23,95 +23,84 @@ jobs:
         with:
           fetch-depth: 0
 
-
-      ########################################################
-      # Install Salesforce CLI
-      ########################################################
+########################################################
+# Install Salesforce CLI
+########################################################
 
       - name: Install Salesforce CLI
         run: |
           npm install @salesforce/cli --global
           sf version
 
+########################################################
+# Install Delta Plugin
+########################################################
 
-      ########################################################
-      # Install Delta Tool
-      ########################################################
-
-      - name: Install SFDX Git Delta
+      - name: Install sfdx-git-delta Plugin
         run: |
-          npm install sfdx-git-delta -g
+          echo y | sf plugins install sfdx-git-delta
 
+########################################################
+# Authenticate Salesforce Org
+########################################################
 
-      ########################################################
-      # Authenticate Salesforce Org
-      ########################################################
-
-      - name: Authenticate Salesforce Org
+      - name: Authenticate Org
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
           sf org login sfdx-url \
-          --sfdx-url-file auth.txt \
-          --alias targetOrg
+            --sfdx-url-file auth.txt \
+            --alias targetOrg
 
+########################################################
+# Generate Delta Package
+########################################################
 
-      ########################################################
-      # Generate Delta Package
-      ########################################################
-
-      - name: Generate Delta Package
+      - name: Generate Delta
         run: |
-
           rm -rf delta
-          mkdir delta
 
-          sgd:source:delta \
-          --to HEAD \
-          --from HEAD~1 \
-          --output delta
+          sf sgd source delta \
+            --to HEAD \
+            --from HEAD~1 \
+            --output-dir delta
 
+########################################################
+# Debug Delta Output
+########################################################
 
-      ########################################################
-      # Debug Delta Package
-      ########################################################
-
-      - name: Show Delta Package
+      - name: Show Delta Files
         run: |
-          echo "Delta package content:"
+          echo "Generated delta files:"
           ls -R delta
 
+########################################################
+# Skip if No Metadata Changes
+########################################################
 
-      ########################################################
-      # Skip if No Metadata Changes
-      ########################################################
-
-      - name: Check If Metadata Exists
+      - name: Check Metadata Changes
         run: |
-
           if [ ! -f "delta/package/package.xml" ]; then
             echo "No metadata changes detected. Skipping validation."
             exit 0
           fi
 
-
-      ########################################################
-      # Validate Deployment
-      ########################################################
+########################################################
+# Validate Deployment
+########################################################
 
       - name: Validate Delta Deployment
         run: |
           sf project deploy validate \
-          --manifest delta/package/package.xml \
-          --target-org targetOrg \
-          --wait 30
+            --manifest delta/package/package.xml \
+            --target-org targetOrg \
+            --wait 30
 
 
-  ########################################################
-  # DEPLOYMENT JOB
-  ########################################################
+########################################################
+# DEPLOYMENT JOB
+########################################################
 
   deploy:
-
     needs: validate
     runs-on: ubuntu-latest
 
@@ -124,85 +113,72 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-
-      ########################################################
-      # Install Salesforce CLI
-      ########################################################
+########################################################
+# Install Salesforce CLI
+########################################################
 
       - name: Install Salesforce CLI
         run: |
           npm install @salesforce/cli --global
 
+########################################################
+# Install Delta Plugin
+########################################################
 
-      ########################################################
-      # Install Delta Tool
-      ########################################################
-
-      - name: Install SFDX Git Delta
+      - name: Install sfdx-git-delta Plugin
         run: |
-          npm install sfdx-git-delta -g
+          echo y | sf plugins install sfdx-git-delta
 
+########################################################
+# Authenticate Org
+########################################################
 
-      ########################################################
-      # Authenticate Salesforce Org
-      ########################################################
-
-      - name: Authenticate Salesforce Org
+      - name: Authenticate Org
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
           sf org login sfdx-url \
-          --sfdx-url-file auth.txt \
-          --alias targetOrg
+            --sfdx-url-file auth.txt \
+            --alias targetOrg
 
+########################################################
+# Generate Delta Again
+########################################################
 
-      ########################################################
-      # Generate Delta Again
-      ########################################################
-
-      - name: Generate Delta Package
+      - name: Generate Delta
         run: |
-
           rm -rf delta
-          mkdir delta
 
-          sgd:source:delta \
-          --to HEAD \
-          --from HEAD~1 \
-          --output delta
+          sf sgd source delta \
+            --to HEAD \
+            --from HEAD~1 \
+            --output-dir delta
 
+########################################################
+# Show Delta Files
+########################################################
 
-      ########################################################
-      # Debug Delta Files
-      ########################################################
-
-      - name: Show Delta Files
+      - name: Debug Delta Files
         run: |
           ls -R delta
 
+########################################################
+# Skip Deployment if No Changes
+########################################################
 
-      ########################################################
-      # Skip Deployment if No Changes
-      ########################################################
-
-      - name: Check Metadata Before Deploy
+      - name: Check Metadata
         run: |
-
           if [ ! -f "delta/package/package.xml" ]; then
             echo "No metadata changes detected. Skipping deployment."
             exit 0
           fi
 
-
-      ########################################################
-      # Deploy Delta Metadata
-      ########################################################
+########################################################
+# Deploy Delta Metadata
+########################################################
 
       - name: Deploy Delta Metadata
         run: |
-
-          echo "Deploying changed metadata..."
-
           sf project deploy start \
-          --manifest delta/package/package.xml \
-          --target-org targetOrg \
-          --wait 30
+            --manifest delta/package/package.xml \
+            --target-org targetOrg \
+            --wait 30
