@@ -1,4 +1,4 @@
-name: Salesforce CI/CD Pipeline
+name: Salesforce CI/CD Pipeline (Delta Deployment)
 
 on:
   push:
@@ -9,95 +9,178 @@ on:
 
 jobs:
 
-  ########################################################
-  # JOB 1 — VALIDATION
-  ########################################################
+########################################################
+# VALIDATION JOB
+########################################################
 
   validate:
     runs-on: ubuntu-latest
 
     steps:
 
-      - name: Checkout Source Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+########################################################
+# Install Salesforce CLI
+########################################################
 
       - name: Install Salesforce CLI
         run: |
           npm install @salesforce/cli --global
           sf version
 
-      - name: Authenticate to Target Org
+########################################################
+# Install Delta Plugin
+########################################################
+
+      - name: Install sfdx-git-delta
         run: |
-          echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
-          sf org login sfdx-url --sfdx-url-file auth_url.txt --set-default --alias targetOrg
+          echo y | sf plugins install sfdx-git-delta
 
-      ########################################################
-      # Detect Profile / PermissionSet Changes
-      ########################################################
+########################################################
+# Authenticate Org
+########################################################
 
-      - name: Detect Profile or PermissionSet Changes
+      - name: Authenticate Salesforce Org
         run: |
+          echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
+          sf org login sfdx-url \
+            --sfdx-url-file auth.txt \
+            --alias targetOrg
 
-          echo "Checking for sensitive metadata changes..."
+########################################################
+# Generate Delta Package
+########################################################
 
-          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+      - name: Generate Delta
+        run: |
+          rm -rf delta
+          mkdir -p delta
 
-          echo "$CHANGED_FILES"
+          sf sgd source delta \
+            --to HEAD \
+            --from HEAD~1 \
+            --output-dir delta
 
-          if echo "$CHANGED_FILES" | grep -E "profiles|permissionsets"; then
-            echo "Sensitive metadata change detected"
-          else
-            echo "No sensitive metadata changes"
+########################################################
+# Debug Delta Files
+########################################################
+
+      - name: Show Delta Files
+        run: |
+          echo "Delta content:"
+          ls -R delta
+
+########################################################
+# Skip If No Metadata Changes
+########################################################
+
+      - name: Check Metadata Changes
+        run: |
+          if [ ! -f "delta/package/package.xml" ]; then
+            echo "No metadata changes detected."
+            exit 0
           fi
 
+########################################################
+# Validate Deployment
+########################################################
 
-      ########################################################
-      # Validation
-      ########################################################
-
-      - name: Validate Changes
+      - name: Validate Deployment
         run: |
-          echo "Running validation for branch: ${{ github.ref_name }}"
-
           sf project deploy validate \
-            --source-dir force-app \
+            --manifest delta/package/package.xml \
             --target-org targetOrg \
             --wait 30
 
 
-  ########################################################
-  # JOB 2 — DEPLOYMENT (ONLY MAIN BRANCH)
-  ########################################################
+########################################################
+# DEPLOY JOB
+########################################################
 
   deploy:
     needs: validate
     runs-on: ubuntu-latest
+
     if: github.ref == 'refs/heads/main'
 
     environment: production
 
     steps:
 
-      - name: Checkout Source Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
+
+########################################################
+# Install Salesforce CLI
+########################################################
 
       - name: Install Salesforce CLI
         run: |
           npm install @salesforce/cli --global
 
-      - name: Authenticate to Target Org
+########################################################
+# Install Delta Plugin
+########################################################
+
+      - name: Install sfdx-git-delta
         run: |
-          echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
-          sf org login sfdx-url --sfdx-url-file auth_url.txt --set-default --alias targetOrg
+          echo y | sf plugins install sfdx-git-delta
 
-      - name: Deploy to Production
+########################################################
+# Authenticate Org
+########################################################
+
+      - name: Authenticate Salesforce Org
         run: |
+          echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
+          sf org login sfdx-url \
+            --sfdx-url-file auth.txt \
+            --alias targetOrg
 
-          echo "Validation passed. Deploying to Production..."
+########################################################
+# Generate Delta Again
+########################################################
 
+      - name: Generate Delta
+        run: |
+          rm -rf delta
+          mkdir -p delta
+
+          sf sgd source delta \
+            --to HEAD \
+            --from HEAD~1 \
+            --output-dir delta
+
+########################################################
+# Debug Delta Files
+########################################################
+
+      - name: Show Delta Files
+        run: |
+          ls -R delta
+
+########################################################
+# Skip Deployment If No Changes
+########################################################
+
+      - name: Check Metadata
+        run: |
+          if [ ! -f "delta/package/package.xml" ]; then
+            echo "No metadata changes detected. Skipping deployment."
+            exit 0
+          fi
+
+########################################################
+# Deploy Delta Metadata
+########################################################
+
+      - name: Deploy Delta
+        run: |
           sf project deploy start \
-            --source-dir force-app \
+            --manifest delta/package/package.xml \
             --target-org targetOrg \
             --wait 30
