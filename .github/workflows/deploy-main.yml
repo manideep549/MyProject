@@ -18,10 +18,15 @@ jobs:
 
     steps:
 
+########################################################
+# Checkout Full Git History
+########################################################
+
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
 
 ########################################################
 # Install Salesforce CLI
@@ -32,6 +37,7 @@ jobs:
           npm install @salesforce/cli --global
           sf version
 
+
 ########################################################
 # Install Delta Plugin
 ########################################################
@@ -40,16 +46,18 @@ jobs:
         run: |
           echo y | sf plugins install sfdx-git-delta
 
+
 ########################################################
-# Authenticate Org
+# Authenticate Salesforce Org
 ########################################################
 
-      - name: Authenticate Salesforce Org
+      - name: Authenticate Org
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
           sf org login sfdx-url \
             --sfdx-url-file auth.txt \
             --alias targetOrg
+
 
 ########################################################
 # Generate Delta Package
@@ -57,13 +65,19 @@ jobs:
 
       - name: Generate Delta
         run: |
+
           rm -rf delta
           mkdir -p delta
 
+          echo "Generating delta..."
+
+          PREVIOUS_COMMIT=$(git rev-parse HEAD~1)
+
           sf sgd source delta \
             --to HEAD \
-            --from HEAD~1 \
+            --from $PREVIOUS_COMMIT \
             --output-dir delta
+
 
 ########################################################
 # Debug Delta Files
@@ -71,19 +85,22 @@ jobs:
 
       - name: Show Delta Files
         run: |
-          echo "Delta content:"
+          echo "Delta package contents:"
           ls -R delta
 
+
 ########################################################
-# Skip If No Metadata Changes
+# Skip if No Metadata Changes
 ########################################################
 
       - name: Check Metadata Changes
         run: |
+
           if [ ! -f "delta/package/package.xml" ]; then
-            echo "No metadata changes detected."
+            echo "No metadata changes detected. Skipping validation."
             exit 0
           fi
+
 
 ########################################################
 # Validate Deployment
@@ -98,10 +115,11 @@ jobs:
 
 
 ########################################################
-# DEPLOY JOB
+# DEPLOYMENT JOB
 ########################################################
 
   deploy:
+
     needs: validate
     runs-on: ubuntu-latest
 
@@ -111,8 +129,15 @@ jobs:
 
     steps:
 
+########################################################
+# Checkout Repository
+########################################################
+
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
 
 ########################################################
 # Install Salesforce CLI
@@ -122,6 +147,7 @@ jobs:
         run: |
           npm install @salesforce/cli --global
 
+
 ########################################################
 # Install Delta Plugin
 ########################################################
@@ -130,49 +156,58 @@ jobs:
         run: |
           echo y | sf plugins install sfdx-git-delta
 
+
 ########################################################
 # Authenticate Org
 ########################################################
 
-      - name: Authenticate Salesforce Org
+      - name: Authenticate Org
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
           sf org login sfdx-url \
             --sfdx-url-file auth.txt \
             --alias targetOrg
 
+
 ########################################################
-# Generate Delta Again
+# Generate Delta Package
 ########################################################
 
       - name: Generate Delta
         run: |
+
           rm -rf delta
           mkdir -p delta
 
+          PREVIOUS_COMMIT=$(git rev-parse HEAD~1)
+
           sf sgd source delta \
             --to HEAD \
-            --from HEAD~1 \
+            --from $PREVIOUS_COMMIT \
             --output-dir delta
 
+
 ########################################################
-# Debug Delta Files
+# Show Delta Files
 ########################################################
 
-      - name: Show Delta Files
+      - name: Debug Delta Files
         run: |
           ls -R delta
 
+
 ########################################################
-# Skip Deployment If No Changes
+# Skip Deployment if No Changes
 ########################################################
 
       - name: Check Metadata
         run: |
+
           if [ ! -f "delta/package/package.xml" ]; then
             echo "No metadata changes detected. Skipping deployment."
             exit 0
           fi
+
 
 ########################################################
 # Deploy Delta Metadata
@@ -180,6 +215,9 @@ jobs:
 
       - name: Deploy Delta
         run: |
+
+          echo "Deploying changed metadata..."
+
           sf project deploy start \
             --manifest delta/package/package.xml \
             --target-org targetOrg \
