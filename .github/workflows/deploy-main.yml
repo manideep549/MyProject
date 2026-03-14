@@ -36,15 +36,15 @@ jobs:
 # Install Delta Plugin
 ########################################################
 
-      - name: Install sfdx-git-delta Plugin
+      - name: Install sfdx-git-delta
         run: |
           echo y | sf plugins install sfdx-git-delta
 
 ########################################################
-# Authenticate Salesforce Org
+# Authenticate Org
 ########################################################
 
-      - name: Authenticate Org
+      - name: Authenticate Salesforce Org
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
           sf org login sfdx-url \
@@ -58,6 +58,7 @@ jobs:
       - name: Generate Delta
         run: |
           rm -rf delta
+          mkdir -p delta
 
           sf sgd source delta \
             --to HEAD \
@@ -65,22 +66,22 @@ jobs:
             --output-dir delta
 
 ########################################################
-# Debug Delta Output
+# Debug Delta Files
 ########################################################
 
       - name: Show Delta Files
         run: |
-          echo "Generated delta files:"
+          echo "Delta content:"
           ls -R delta
 
 ########################################################
-# Skip if No Metadata Changes
+# Skip If No Metadata Changes
 ########################################################
 
       - name: Check Metadata Changes
         run: |
           if [ ! -f "delta/package/package.xml" ]; then
-            echo "No metadata changes detected. Skipping validation."
+            echo "No metadata changes detected."
             exit 0
           fi
 
@@ -88,7 +89,7 @@ jobs:
 # Validate Deployment
 ########################################################
 
-      - name: Validate Delta Deployment
+      - name: Validate Deployment
         run: |
           sf project deploy validate \
             --manifest delta/package/package.xml \
@@ -97,7 +98,7 @@ jobs:
 
 
 ########################################################
-# DEPLOYMENT JOB
+# DEPLOY JOB
 ########################################################
 
   deploy:
@@ -125,7 +126,7 @@ jobs:
 # Install Delta Plugin
 ########################################################
 
-      - name: Install sfdx-git-delta Plugin
+      - name: Install sfdx-git-delta
         run: |
           echo y | sf plugins install sfdx-git-delta
 
@@ -133,7 +134,7 @@ jobs:
 # Authenticate Org
 ########################################################
 
-      - name: Authenticate Org
+      - name: Authenticate Salesforce Org
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
           sf org login sfdx-url \
@@ -147,6 +148,7 @@ jobs:
       - name: Generate Delta
         run: |
           rm -rf delta
+          mkdir -p delta
 
           sf sgd source delta \
             --to HEAD \
@@ -154,15 +156,15 @@ jobs:
             --output-dir delta
 
 ########################################################
-# Show Delta Files
+# Debug Delta Files
 ########################################################
 
-      - name: Debug Delta Files
+      - name: Show Delta Files
         run: |
           ls -R delta
 
 ########################################################
-# Skip Deployment if No Changes
+# Skip Deployment If No Changes
 ########################################################
 
       - name: Check Metadata
@@ -176,7 +178,7 @@ jobs:
 # Deploy Delta Metadata
 ########################################################
 
-      - name: Deploy Delta Metadata
+      - name: Deploy Delta
         run: |
           sf project deploy start \
             --manifest delta/package/package.xml \
