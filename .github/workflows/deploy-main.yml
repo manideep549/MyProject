@@ -1,4 +1,4 @@
-name: Salesforce CI/CD Pipeline
+name: Salesforce CI/CD Pipeline (Delta Deployment)
 
 on:
   push:
@@ -8,6 +8,10 @@ on:
       - main
 
 jobs:
+
+  ########################################################
+  # VALIDATION JOB
+  ########################################################
 
   validate:
     runs-on: ubuntu-latest
@@ -31,7 +35,7 @@ jobs:
 
 
       ########################################################
-      # Install Delta Deployment Tool
+      # Install Delta Tool
       ########################################################
 
       - name: Install SFDX Git Delta
@@ -57,6 +61,8 @@ jobs:
 
       - name: Generate Delta Package
         run: |
+
+          rm -rf delta
           mkdir delta
 
           sgd:source:delta \
@@ -66,13 +72,26 @@ jobs:
 
 
       ########################################################
-      # Debug Delta Output
+      # Debug Delta Package
       ########################################################
 
       - name: Show Delta Package
         run: |
           echo "Delta package content:"
           ls -R delta
+
+
+      ########################################################
+      # Skip if No Metadata Changes
+      ########################################################
+
+      - name: Check If Metadata Exists
+        run: |
+
+          if [ ! -f "delta/package/package.xml" ]; then
+            echo "No metadata changes detected. Skipping validation."
+            exit 0
+          fi
 
 
       ########################################################
@@ -87,13 +106,16 @@ jobs:
           --wait 30
 
 
+  ########################################################
+  # DEPLOYMENT JOB
+  ########################################################
+
   deploy:
 
     needs: validate
+    runs-on: ubuntu-latest
 
     if: github.ref == 'refs/heads/main'
-
-    runs-on: ubuntu-latest
 
     environment: production
 
@@ -122,7 +144,7 @@ jobs:
 
 
       ########################################################
-      # Authenticate Org
+      # Authenticate Salesforce Org
       ########################################################
 
       - name: Authenticate Salesforce Org
@@ -139,6 +161,8 @@ jobs:
 
       - name: Generate Delta Package
         run: |
+
+          rm -rf delta
           mkdir delta
 
           sgd:source:delta \
@@ -148,11 +172,36 @@ jobs:
 
 
       ########################################################
+      # Debug Delta Files
+      ########################################################
+
+      - name: Show Delta Files
+        run: |
+          ls -R delta
+
+
+      ########################################################
+      # Skip Deployment if No Changes
+      ########################################################
+
+      - name: Check Metadata Before Deploy
+        run: |
+
+          if [ ! -f "delta/package/package.xml" ]; then
+            echo "No metadata changes detected. Skipping deployment."
+            exit 0
+          fi
+
+
+      ########################################################
       # Deploy Delta Metadata
       ########################################################
 
       - name: Deploy Delta Metadata
         run: |
+
+          echo "Deploying changed metadata..."
+
           sf project deploy start \
           --manifest delta/package/package.xml \
           --target-org targetOrg \
