@@ -14,7 +14,7 @@
             </value>
         </assignmentItems>
     </assignments>
-    <description>Automatically updates description on Account test1000test.</description>
+    <description>Automatically updates description on Account test10001test.</description>
     <environments>Default</environments>
     <interviewLabel>Auto Update Account Description {!$Flow.CurrentDateTime}</interviewLabel>
     <label>Auto Update Account Description</label>
