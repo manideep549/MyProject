@@ -1,0 +1,68 @@
+name: Salesforce Rollback Pipeline
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rollback:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+########################################################
+# Checkout Repository
+########################################################
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+########################################################
+# Install Salesforce CLI
+########################################################
+
+      - name: Install Salesforce CLI
+        run: |
+          npm install @salesforce/cli --global
+          sf version
+
+########################################################
+# Authenticate Salesforce Org
+########################################################
+
+      - name: Authenticate Production Org
+        run: |
+          echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
+          sf org login sfdx-url \
+            --sfdx-url-file auth.txt \
+            --alias prodOrg
+
+########################################################
+# Download Previous Artifact
+########################################################
+
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: salesforce-stable-release
+          path: rollback
+
+########################################################
+# Verify Artifact
+########################################################
+
+      - name: Show Artifact Files
+        run: |
+          echo "Rollback artifact:"
+          ls -R rollback
+
+########################################################
+# Deploy Previous Stable Version
+########################################################
+
+      - name: Deploy Stable Version
+        run: |
+          sf project deploy start \
+            --source-dir rollback/force-app \
+            --target-org prodOrg \
+            --wait 30

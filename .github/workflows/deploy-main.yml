@@ -222,3 +222,28 @@ jobs:
             --manifest delta/package/package.xml \
             --target-org targetOrg \
             --wait 30
+
+
+########################################################
+# Create Artifact for Rollback
+########################################################
+
+      - name: Create Artifact Package
+        if: success()
+        run: |
+          rm -rf artifact
+          mkdir artifact
+          cp -r force-app artifact/
+          echo "Artifact created for rollback."
+
+
+########################################################
+# Upload Artifact
+########################################################
+
+      - name: Upload Artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: salesforce-stable-release
+          path: artifact
