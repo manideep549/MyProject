@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  rollback:
 
+  rollback:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,6 +17,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+
 ########################################################
 # Install Salesforce CLI
 ########################################################
@@ -26,8 +27,9 @@ jobs:
           npm install @salesforce/cli --global
           sf version
 
+
 ########################################################
-# Authenticate Salesforce Org
+# Authenticate Salesforce Production Org
 ########################################################
 
       - name: Authenticate Production Org
@@ -37,8 +39,9 @@ jobs:
             --sfdx-url-file auth.txt \
             --alias prodOrg
 
+
 ########################################################
-# Download Previous Artifact
+# Download Last Stable Artifact
 ########################################################
 
       - name: Download Artifact
@@ -47,14 +50,16 @@ jobs:
           name: salesforce-stable-release
           path: rollback
 
+
 ########################################################
-# Verify Artifact
+# Verify Artifact Files
 ########################################################
 
       - name: Show Artifact Files
         run: |
-          echo "Rollback artifact:"
+          echo "Downloaded artifact contents:"
           ls -R rollback
+
 
 ########################################################
 # Deploy Previous Stable Version
@@ -62,7 +67,11 @@ jobs:
 
       - name: Deploy Stable Version
         run: |
+          echo "Rolling back to previous stable deployment..."
+
           sf project deploy start \
             --source-dir rollback/force-app \
             --target-org prodOrg \
             --wait 30
+
+          echo "Rollback deployment completed."
