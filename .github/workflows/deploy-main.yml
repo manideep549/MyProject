@@ -18,39 +18,24 @@ jobs:
 
     steps:
 
-########################################################
-# Checkout Full Git History
-########################################################
-
+      # Checkout Full Git History
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-
-########################################################
-# Install Salesforce CLI
-########################################################
-
+      # Install Salesforce CLI
       - name: Install Salesforce CLI
         run: |
           npm install @salesforce/cli --global
           sf version
 
-
-########################################################
-# Install Delta Plugin
-########################################################
-
+      # Install Delta Plugin
       - name: Install sfdx-git-delta
         run: |
           echo y | sf plugins install sfdx-git-delta
 
-
-########################################################
-# Authenticate Salesforce Org
-########################################################
-
+      # Authenticate Salesforce Org
       - name: Authenticate Org
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
@@ -58,18 +43,11 @@ jobs:
             --sfdx-url-file auth.txt \
             --alias targetOrg
 
-
-########################################################
-# Generate Delta Package
-########################################################
-
+      # Generate Delta Package
       - name: Generate Delta
         run: |
-
           rm -rf delta
           mkdir -p delta
-
-          echo "Generating delta..."
 
           PREVIOUS_COMMIT=$(git rev-parse HEAD~1)
 
@@ -78,34 +56,20 @@ jobs:
             --from $PREVIOUS_COMMIT \
             --output-dir delta
 
-
-########################################################
-# Debug Delta Files
-########################################################
-
+      # Debug Delta Files
       - name: Show Delta Files
         run: |
-          echo "Delta package contents:"
           ls -R delta
 
-
-########################################################
-# Skip if No Metadata Changes
-########################################################
-
+      # Skip if No Metadata Changes
       - name: Check Metadata Changes
         run: |
-
           if [ ! -f "delta/package/package.xml" ]; then
             echo "No metadata changes detected. Skipping validation."
             exit 0
           fi
 
-
-########################################################
-# Validate Deployment
-########################################################
-
+      # Validate Deployment
       - name: Validate Deployment
         run: |
           sf project deploy validate \
@@ -119,48 +83,30 @@ jobs:
 ########################################################
 
   deploy:
-
     needs: validate
     runs-on: ubuntu-latest
-
     if: github.ref == 'refs/heads/main'
-
     environment: production
 
     steps:
 
-########################################################
-# Checkout Repository
-########################################################
-
+      # Checkout Repository
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-
-########################################################
-# Install Salesforce CLI
-########################################################
-
+      # Install Salesforce CLI
       - name: Install Salesforce CLI
         run: |
           npm install @salesforce/cli --global
 
-
-########################################################
-# Install Delta Plugin
-########################################################
-
+      # Install Delta Plugin
       - name: Install sfdx-git-delta
         run: |
           echo y | sf plugins install sfdx-git-delta
 
-
-########################################################
-# Authenticate Org
-########################################################
-
+      # Authenticate Org
       - name: Authenticate Org
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
@@ -168,14 +114,9 @@ jobs:
             --sfdx-url-file auth.txt \
             --alias targetOrg
 
-
-########################################################
-# Generate Delta Package
-########################################################
-
+      # Generate Delta Package
       - name: Generate Delta
         run: |
-
           rm -rf delta
           mkdir -p delta
 
@@ -186,36 +127,22 @@ jobs:
             --from $PREVIOUS_COMMIT \
             --output-dir delta
 
-
-########################################################
-# Show Delta Files
-########################################################
-
+      # Show Delta Files
       - name: Debug Delta Files
         run: |
           ls -R delta
 
-
-########################################################
-# Skip Deployment if No Changes
-########################################################
-
+      # Skip Deployment if No Changes
       - name: Check Metadata
         run: |
-
           if [ ! -f "delta/package/package.xml" ]; then
             echo "No metadata changes detected. Skipping deployment."
             exit 0
           fi
 
-
-########################################################
-# Deploy Delta Metadata
-########################################################
-
+      # Deploy Delta Metadata
       - name: Deploy Delta
         run: |
-
           echo "Deploying changed metadata..."
 
           sf project deploy start \
@@ -223,11 +150,7 @@ jobs:
             --target-org targetOrg \
             --wait 30
 
-
-########################################################
-# Create Artifact for Rollback
-########################################################
-
+      # Create Artifact for Rollback
       - name: Create Artifact Package
         if: success()
         run: |
@@ -236,14 +159,22 @@ jobs:
           cp -r force-app artifact/
           echo "Artifact created for rollback."
 
-
-########################################################
-# Upload Artifact
-########################################################
-
+      # Upload Artifact
       - name: Upload Artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: salesforce-stable-release
           path: artifact
+
+      ########################################################
+      # 🔥 TRIGGER AUTO DOCUMENTATION PIPELINE
+      ########################################################
+      - name: Trigger Documentation Pipeline
+        if: success()
+        run: |
+          curl -X POST \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/auto-doc.yml/dispatches \
+          -d '{"ref":"main"}'
