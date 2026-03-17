@@ -1,101 +1,249 @@
-name: Main Deployment Pipeline
+name: Salesforce CI/CD Pipeline (Delta Deployment)
 
 on:
   push:
-    branches: [main]
+    branches:
+      - dev
+      - uat
+      - main
 
 jobs:
-  deploy:
+
+########################################################
+# VALIDATION JOB
+########################################################
+
+  validate:
     runs-on: ubuntu-latest
 
     steps:
 
-    - name: Checkout Code
-      uses: actions/checkout@v4
+########################################################
+# Checkout Full Git History
+########################################################
 
-    - name: Install Salesforce CLI
-      run: |
-        npm install @salesforce/cli --global
-        sf version
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Install jq
-      run: |
-        sudo apt-get update
-        sudo apt-get install jq -y
 
-    ########################################################
-    # AUTH
-    ########################################################
-    - name: Authenticate Org
-      run: |
-        echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
-        sf org login sfdx-url --sfdx-url-file auth.txt --alias prodOrg
+########################################################
+# Install Salesforce CLI
+########################################################
 
-    ########################################################
-    # READ TEST CLASSES
-    ########################################################
-    - name: Prepare Test Classes
-      run: |
-        TEST_ARGS=""
-        while IFS= read -r line
-        do
-          CLASS=$(echo $line | xargs)
-          if [ ! -z "$CLASS" ]; then
-            TEST_ARGS="$TEST_ARGS --tests $CLASS"
+      - name: Install Salesforce CLI
+        run: |
+          npm install @salesforce/cli --global
+          sf version
+
+
+########################################################
+# Install Delta Plugin
+########################################################
+
+      - name: Install sfdx-git-delta
+        run: |
+          echo y | sf plugins install sfdx-git-delta
+
+
+########################################################
+# Authenticate Salesforce Org
+########################################################
+
+      - name: Authenticate Org
+        run: |
+          echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
+          sf org login sfdx-url \
+            --sfdx-url-file auth.txt \
+            --alias targetOrg
+
+
+########################################################
+# Generate Delta Package
+########################################################
+
+      - name: Generate Delta
+        run: |
+
+          rm -rf delta
+          mkdir -p delta
+
+          echo "Generating delta..."
+
+          PREVIOUS_COMMIT=$(git rev-parse HEAD~1)
+
+          sf sgd source delta \
+            --to HEAD \
+            --from $PREVIOUS_COMMIT \
+            --output-dir delta
+
+
+########################################################
+# Debug Delta Files
+########################################################
+
+      - name: Show Delta Files
+        run: |
+          echo "Delta package contents:"
+          ls -R delta
+
+
+########################################################
+# Skip if No Metadata Changes
+########################################################
+
+      - name: Check Metadata Changes
+        run: |
+
+          if [ ! -f "delta/package/package.xml" ]; then
+            echo "No metadata changes detected. Skipping validation."
+            exit 0
           fi
-        done < Testclass
 
-        echo "TEST_ARGS=$TEST_ARGS" >> $GITHUB_ENV
 
-    ########################################################
-    # DEPLOY
-    ########################################################
-    - name: Deploy to Salesforce
-      id: deploy
-      run: |
-        set +e
+########################################################
+# Validate Deployment
+########################################################
 
-        sf project deploy start \
-          --target-org prodOrg \
-          --source-dir force-app \
-          $TEST_ARGS \
-          --wait 30
+      - name: Validate Deployment
+        run: |
+          sf project deploy validate \
+            --manifest delta/package/package.xml \
+            --target-org targetOrg \
+            --wait 30
 
-        if [ $? -eq 0 ]; then
-          echo "DEPLOY_STATUS=SUCCESS" >> $GITHUB_ENV
-        else
-          echo "DEPLOY_STATUS=FAILURE" >> $GITHUB_ENV
-          exit 1
-        fi
 
-    ########################################################
-    # 🔥 AUTO DOCUMENTATION (ONLY SUCCESS)
-    ########################################################
-    - name: Generate Deployment Report
-      if: success()
-      run: |
-        chmod +x scripts/generate-doc.sh
-        ./scripts/generate-doc.sh
+########################################################
+# DEPLOYMENT JOB
+########################################################
 
-    ########################################################
-    # UPLOAD REPORT
-    ########################################################
-    - name: Upload Report
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: deployment-report
-        path: docs/deployments/
+  deploy:
 
-    ########################################################
-    # COMMIT REPORT
-    ########################################################
-    - name: Commit Report
-      if: success()
-      run: |
-        git config --global user.name "github-actions"
-        git config --global user.email "actions@github.com"
+    needs: validate
+    runs-on: ubuntu-latest
 
-        git add docs/deployments/
-        git commit -m "Auto deployment report [skip ci]" || echo "No changes"
-        git push
+    if: github.ref == 'refs/heads/main'
+
+    environment: production
+
+    steps:
+
+########################################################
+# Checkout Repository
+########################################################
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+
+########################################################
+# Install Salesforce CLI
+########################################################
+
+      - name: Install Salesforce CLI
+        run: |
+          npm install @salesforce/cli --global
+
+
+########################################################
+# Install Delta Plugin
+########################################################
+
+      - name: Install sfdx-git-delta
+        run: |
+          echo y | sf plugins install sfdx-git-delta
+
+
+########################################################
+# Authenticate Org
+########################################################
+
+      - name: Authenticate Org
+        run: |
+          echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
+          sf org login sfdx-url \
+            --sfdx-url-file auth.txt \
+            --alias targetOrg
+
+
+########################################################
+# Generate Delta Package
+########################################################
+
+      - name: Generate Delta
+        run: |
+
+          rm -rf delta
+          mkdir -p delta
+
+          PREVIOUS_COMMIT=$(git rev-parse HEAD~1)
+
+          sf sgd source delta \
+            --to HEAD \
+            --from $PREVIOUS_COMMIT \
+            --output-dir delta
+
+
+########################################################
+# Show Delta Files
+########################################################
+
+      - name: Debug Delta Files
+        run: |
+          ls -R delta
+
+
+########################################################
+# Skip Deployment if No Changes
+########################################################
+
+      - name: Check Metadata
+        run: |
+
+          if [ ! -f "delta/package/package.xml" ]; then
+            echo "No metadata changes detected. Skipping deployment."
+            exit 0
+          fi
+
+
+########################################################
+# Deploy Delta Metadata
+########################################################
+
+      - name: Deploy Delta
+        run: |
+
+          echo "Deploying changed metadata..."
+
+          sf project deploy start \
+            --manifest delta/package/package.xml \
+            --target-org targetOrg \
+            --wait 30
+
+
+########################################################
+# Create Artifact for Rollback
+########################################################
+
+      - name: Create Artifact Package
+        if: success()
+        run: |
+          rm -rf artifact
+          mkdir artifact
+          cp -r force-app artifact/
+          echo "Artifact created for rollback."
+
+
+########################################################
+# Upload Artifact
+########################################################
+
+      - name: Upload Artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: salesforce-stable-release
+          path: artifact
