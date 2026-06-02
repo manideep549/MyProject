@@ -1,0 +1,78 @@
+name: Auto Documentation Pipeline
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate-doc:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    ########################################################
+    # INSTALL DELTA TOOL
+    ########################################################
+    - name: Install Salesforce CLI + Delta
+      run: |
+        npm install @salesforce/cli --global
+        sf plugins install sfdx-git-delta
+
+    ########################################################
+    # GENERATE DELTA
+    ########################################################
+    - name: Generate Changed Components
+      run: |
+        mkdir delta
+
+        sf sgd source delta \
+          --to HEAD \
+          --from HEAD~1 \
+          --output delta
+
+    ########################################################
+    # GENERATE DOCUMENTATION
+    ########################################################
+    - name: Create Documentation File
+      run: |
+        mkdir -p docs/deployments
+
+        FILE="docs/deployments/deployment-$(date +%s).md"
+
+        echo "# 🚀 Deployment Report" > $FILE
+        echo "" >> $FILE
+        echo "## 📦 Changed Components" >> $FILE
+        echo '```' >> $FILE
+
+        if [ -f "delta/package.xml" ]; then
+          cat delta/package.xml >> $FILE
+        else
+          echo "No changes found" >> $FILE
+        fi
+
+        echo '```' >> $FILE
+
+        echo "✅ Documentation created"
+
+    ########################################################
+    # UPLOAD REPORT
+    ########################################################
+    - name: Upload Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: deployment-doc
+        path: docs/deployments/
+
+    ########################################################
+    # COMMIT REPORT
+    ########################################################
+    - name: Commit Report
+      run: |
+        git config --global user.name "github-actions"
+        git config --global user.email "actions@github.com"
+
+        git add docs/deployments/
+        git commit -m "Auto deployment documentation [skip ci]" || echo "No changes"
+        git push
