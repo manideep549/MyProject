@@ -5,7 +5,7 @@ The pipeline automates **code quality checks, test execution, validation, approv
 
 ---
 
-## 🚀 Project Overview
+## 🚀 Project Overview ---
 
 This CI/CD pipeline enforces best practices for Salesforce development by integrating:
 
