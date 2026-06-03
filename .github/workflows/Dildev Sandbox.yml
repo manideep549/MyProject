@@ -6,6 +6,86 @@ on:
       - master
   workflow_dispatch:
 
+  jobs:
+ validate:
+    name: Dildev Sandbox
+    runs-on: ubuntu-latest
+    environment: dildev-sandbox
+    env:
+      SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL_dildev }}
+     ORG_ALIAS: Manideep org
+    container:
+      image: salesforce/cli:2.123.1-full
+
+    steps:
+
+      # 1️⃣ Checkout repository
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2️⃣ Verify secret
+      - name: Verify SFDX Auth URL
+        run: |
+          if [ -z "$SFDX_AUTH_URL" ]; then
+            echo '::error::"SFDX_AUTH_URL_dildev" secret is not set!'
+            exit 1
+          fi
+      # 3️⃣ Authenticate to Dildev sandbox
+      - name: Authorize to Dildev Sandbox Org
+        run: |
+          echo "Authenticating to Salesforce org: $ORG_ALIAS"
+          printf %s "$SFDX_AUTH_URL" \
+            | sf org login sfdx-url --set-default --alias "$ORG_ALIAS" --sfdx-url-file /dev/stdin
+          echo "✅ Authentication successful"
+          sf org list --json
+      # 4️⃣ Deploy metadata using manifest
+      - name: Deploy Metadata
+        working-directory: bin/Source
+        run: |
+          echo "Starting deployment to org: $ORG_ALIAS"
+          # Run deployment and capture JSON output even if it exits non-zero
+          DEPLOY_RESULT=$(sf project deploy start \
+            --manifest manifest/package.xml \
+            -o "$ORG_ALIAS" \
+            --test-level NoTestRun \
+            --wait 30 \
+            --json || true)
+          echo "Deployment JSON output:"
+          echo "$DEPLOY_RESULT" | jq '.'
+          # Extract deployment status and errors
+          DEPLOY_STATUS=$(echo "$DEPLOY_RESULT" | jq -r '.result.status // empty')
+          DEPLOY_ERRORS=$(echo "$DEPLOY_RESULT" | jq -r '.result.details.componentFailures[]?.problem // empty')
+          DEPLOY_WARNINGS=$(echo "$DEPLOY_RESULT" | jq -r '.warnings[]?')
+          echo "Deployment status: $DEPLOY_STATUS"
+          if [ -n "$DEPLOY_WARNINGS" ]; then
+            echo "⚠️ Deployment warnings:"
+            echo "$DEPLOY_WARNINGS"
+          fi
+          if [ "$DEPLOY_STATUS" != "Succeeded" ]; then
+            echo '::error::Deployment failed!'
+            if [ -n "$DEPLOY_ERRORS" ]; then
+              echo "::error::$DEPLOY_ERRORS"
+            fi
+            exit 1
+          fi
+          DEPLOY_URL=$(echo "$DEPLOY_RESULT" | jq -r '.result.deployUrl // empty')
+          if [ -n "$DEPLOY_URL" ]; then
+            echo "✅ Deployment completed successfully. You can view it here: $DEPLOY_URL"
+          else
+            echo "✅ Deployment completed successfully."
+          fi
+      # 5️⃣ Logout of all orgs
+      - name: Logout of all orgs
+        if: always()
+        run: |
+          echo "Logging out of all Salesforce orgs..."
+          sf org logout --no-prompt --all
+
+
+########################################################
+# DEPLOYMENT JOB
+########################################################
+
 jobs:
   deploy-to-dildev:
     name: Dildev Sandbox
