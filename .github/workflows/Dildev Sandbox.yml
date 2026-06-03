@@ -3,7 +3,7 @@ name: Dildev Sandbox
 on:
   push: 
     branches:
-      - repobranch
+      - master
   workflow_dispatch:
 
 jobs:
