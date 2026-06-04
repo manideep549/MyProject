@@ -35,29 +35,24 @@ jobs:
 
       - name: Authenticate to Sandbox
         run: |
-          printf "%s" "$SFDX_AUTH_URL" > auth.txt
-
           sf org login sfdx-url \
             --alias "$ORG_ALIAS" \
             --set-default \
-            --sfdx-url-file auth.txt
+            --sfdx-url-file <(echo "$SFDX_AUTH_URL")
 
       - name: Validate Deployment
         working-directory: bin/Source
         run: |
           echo "Validating deployment..."
 
-          sf project deploy validate \
+          sf project deploy start \
+            --dry-run \
             --manifest manifest/package.xml \
             --target-org "$ORG_ALIAS" \
             --test-level NoTestRun \
             --wait 30
 
           echo "✅ Validation successful"
-
-      - name: Logout
-        if: always()
-        run: sf org logout --all --no-prompt
 
 ########################################################
 # DEPLOYMENT JOB
@@ -81,12 +76,10 @@ jobs:
 
       - name: Authenticate to Sandbox
         run: |
-          printf "%s" "$SFDX_AUTH_URL" > auth.txt
-
           sf org login sfdx-url \
             --alias "$ORG_ALIAS" \
             --set-default \
-            --sfdx-url-file auth.txt
+            --sfdx-url-file <(echo "$SFDX_AUTH_URL")
 
       - name: Deploy Metadata
         working-directory: bin/Source
@@ -100,7 +93,3 @@ jobs:
             --wait 30
 
           echo "✅ Deployment successful"
-
-      - name: Logout
-        if: always()
-        run: sf org logout --all --no-prompt
