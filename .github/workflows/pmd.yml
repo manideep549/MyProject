@@ -1,186 +1,184 @@
-name: Salesforce PMD Validation and Test Coverage
+name: Salesforce Delta CI (PMD + Tests)
 
 on:
-  push:
-    branches: [dev, uat, main]
-  pull_request:
-    branches: [dev, uat, main]
+push:
+branches: [dev, uat, main]
+pull_request:
+branches: [dev, uat, main]
 
 jobs:
-  salesforce-ci:
-    runs-on: ubuntu-latest
+salesforce-ci:
+runs-on: ubuntu-latest
 
-    steps:
+```
+steps:
 
-    # Checkout Code
-    - name: Checkout Source Code
-      uses: actions/checkout@v4
+# Checkout full history (IMPORTANT for delta)
+- name: Checkout Source Code
+  uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
 
+# Install Salesforce CLI
+- name: Install Salesforce CLI
+  run: |
+    npm install @salesforce/cli --global
+    sf version
 
-    # Install Salesforce CLI
-    - name: Install Salesforce CLI
-      run: |
-        npm install @salesforce/cli --global
-        sf version
+# Install SFDX Git Delta Plugin
+- name: Install SFDX Git Delta
+  run: |
+    sf plugins install sfdx-git-delta
 
+# Install PMD
+- name: Install PMD
+  run: |
+    wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F7.0.0/pmd-dist-7.0.0-bin.zip
+    unzip pmd-dist-7.0.0-bin.zip
+    echo "$(pwd)/pmd-bin-7.0.0/bin" >> $GITHUB_PATH
 
-    # Install PMD
-    - name: Install PMD
-      run: |
-        wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F7.0.0/pmd-dist-7.0.0-bin.zip
-        unzip pmd-dist-7.0.0-bin.zip
-        echo "$(pwd)/pmd-bin-7.0.0/bin" >> $GITHUB_PATH
+# Install jq
+- name: Install jq
+  run: |
+    sudo apt-get update
+    sudo apt-get install jq -y
 
+########################################################
+# STAGE 1 — Generate Delta Package
+########################################################
 
-    # Install jq for JSON parsing
-    - name: Install jq
-      run: |
-        sudo apt-get update
-        sudo apt-get install jq -y
+- name: Generate Delta
+  run: |
+    echo "Generating delta package..."
 
+    FROM_COMMIT=$(git rev-parse HEAD~1)
+    TO_COMMIT=$(git rev-parse HEAD)
 
-    ########################################################
-    # STAGE 1 — PMD Static Code Analysis
-    ########################################################
+    sf sgd:source:delta \
+      --to $TO_COMMIT \
+      --from $FROM_COMMIT \
+      --output delta
 
-    - name: Run PMD Static Analysis
-      run: |
-        echo "Running PMD Static Analysis"
+    echo "Delta generated"
 
-        pmd check \
-        --dir force-app \
+    ls -R delta
+
+########################################################
+# STAGE 2 — Run PMD on Changed Apex Only
+########################################################
+
+- name: Run PMD on Delta Apex
+  run: |
+    echo "Running PMD on changed Apex classes"
+
+    CHANGED_APEX=$(git diff --name-only HEAD~1 HEAD | grep '\.cls$' || true)
+
+    if [ -z "$CHANGED_APEX" ]; then
+      echo "No Apex changes found. Skipping PMD."
+      exit 0
+    fi
+
+    echo "$CHANGED_APEX"
+
+    for file in $CHANGED_APEX; do
+      pmd check \
+        --file "$file" \
         --rulesets category/apex/design.xml,category/apex/bestpractices.xml \
-        --format text \
         --fail-on-violation
+    done
 
+########################################################
+# STAGE 3 — Authenticate Salesforce Org
+########################################################
 
-    ########################################################
-    # STAGE 2 — Authenticate Salesforce Org
-    ########################################################
+- name: Authenticate Salesforce Org
+  run: |
+    echo "${{ secrets.SFDX_AUTH_URL_dildev }}" | sf org login sfdx-url \
+      --alias ciOrg \
+      --set-default \
+      --sfdx-url-stdin
 
-    - name: Authenticate Salesforce Org
-      shell: bash
-      run: |
-        echo "${{ secrets.SFDX_AUTH_URL_dildev }}" | sf org login sfdx-url \
-          --alias ciOrg \
-          --set-default \
-          --sfdx-url-stdin
+########################################################
+# STAGE 4 — Detect Test Classes (Delta आधारित)
+########################################################
 
+- name: Detect Test Classes
+  run: |
+    echo "Detecting test classes from changed files..."
 
-    ########################################################
-    # STAGE 3 — Debug Testclass File
-    ########################################################
+    TEST_CLASSES=""
 
-    - name: Show Testclass File
-      run: |
-        echo "Contents of Testclass file:"
-        cat Testclass
+    CHANGED_CLASSES=$(git diff --name-only HEAD~1 HEAD | grep '\.cls$' | sed 's#.*/##' | sed 's/.cls//' || true)
 
+    for cls in $CHANGED_CLASSES; do
+      TEST_CLASS="${cls}Test"
 
-    ########################################################
-    # STAGE 4 — Prepare Test Classes
-    ########################################################
-
-    - name: Prepare Test Classes
-      run: |
-        if [ ! -f "Testclass" ]; then
-          echo "ERROR: Testclass file not found"
-          exit 1
-        fi
-
-        TEST_CLASSES=""
-
-        while IFS= read -r line
-        do
-          CLASS=$(echo $line | xargs)
-
-          if [ ! -z "$CLASS" ]; then
-            if [ -z "$TEST_CLASSES" ]; then
-              TEST_CLASSES="$CLASS"
-            else
-              TEST_CLASSES="$TEST_CLASSES,$CLASS"
-            fi
-          fi
-        done < Testclass
-
+      if grep -q "class $TEST_CLASS" -R force-app; then
         if [ -z "$TEST_CLASSES" ]; then
-          echo "ERROR: No test classes found in Testclass file"
-          exit 1
-        fi
-
-        echo "Prepared Comma-Separated Test List:"
-        echo "$TEST_CLASSES"
-
-        echo "TEST_CLASSES=$TEST_CLASSES" >> $GITHUB_ENV
-
-
-    ########################################################
-    # STAGE 5 — Run Apex Tests
-    ########################################################
-
-    - name: Run Apex Tests
-      run: |
-        echo "Running Apex Tests"
-
-        sf apex test run \
-          --target-org ciOrg \
-          --tests "$TEST_CLASSES" \
-          --wait 30 \
-          --result-format json \
-          --code-coverage \
-          --output-dir test-results
-
-        echo "Test execution completed"
-
-
-    ########################################################
-    # STAGE 6 — Debug Generated Files
-    ########################################################
-
-    - name: Show Test Result Files
-      run: |
-        echo "Generated files:"
-        ls -R test-results
-
-
-    ########################################################
-    # STAGE 7 — Display Test Failures
-    ########################################################
-
-    - name: Display Test Failures
-      run: |
-        # Target the explicit test-result JSON output file
-        RESULT_FILE="test-results/test-result.json"
-
-        FAILURES=$(jq '.result.summary.failing' "$RESULT_FILE")
-
-        echo "Failing Tests: $FAILURES"
-
-        if [ "$FAILURES" -gt 0 ]; then
-          echo "Some tests failed"
-          jq '.result.tests[] | select(.Outcome=="Fail")' "$RESULT_FILE"
-          exit 1
-        fi
-
-
-    ########################################################
-    # STAGE 8 — Validate Code Coverage
-    ########################################################
-
-    - name: Validate Code Coverage
-      run: |
-        # Target the explicit test-result JSON output file
-        RESULT_FILE="test-results/test-result.json"
-
-        # Extract string value and strip out the potential '%' symbol
-        RAW_COVERAGE=$(jq -r '.result.summary.testRunCoverage' "$RESULT_FILE")
-        COVERAGE=$(echo "$RAW_COVERAGE" | tr -d '%')
-
-        echo "Total Code Coverage: $COVERAGE%"
-
-        if [ "$COVERAGE" -lt 75 ]; then
-          echo "Code coverage below 75%"
-          exit 1
+          TEST_CLASSES="$TEST_CLASS"
         else
-          echo "Coverage requirement satisfied"
+          TEST_CLASSES="$TEST_CLASSES,$TEST_CLASS"
         fi
+      fi
+    done
+
+    if [ -z "$TEST_CLASSES" ]; then
+      echo "No matching test classes found. Running all local tests."
+      TEST_CLASSES="ALL"
+    fi
+
+    echo "TEST_CLASSES=$TEST_CLASSES" >> $GITHUB_ENV
+    echo "Final Test List: $TEST_CLASSES"
+
+########################################################
+# STAGE 5 — Run Apex Tests
+########################################################
+
+- name: Run Apex Tests
+  run: |
+    echo "Running Apex Tests..."
+
+    if [ "$TEST_CLASSES" = "ALL" ]; then
+      sf apex test run \
+        --target-org ciOrg \
+        --test-level RunLocalTests \
+        --wait 30 \
+        --result-format json \
+        --code-coverage \
+        --output-dir test-results
+    else
+      sf apex test run \
+        --target-org ciOrg \
+        --tests "$TEST_CLASSES" \
+        --wait 30 \
+        --result-format json \
+        --code-coverage \
+        --output-dir test-results
+    fi
+
+########################################################
+# STAGE 6 — Validate Results
+########################################################
+
+- name: Validate Results
+  run: |
+    RESULT_FILE="test-results/test-result.json"
+
+    FAILURES=$(jq '.result.summary.failing' "$RESULT_FILE")
+
+    echo "Failures: $FAILURES"
+
+    if [ "$FAILURES" -gt 0 ]; then
+      jq '.result.tests[] | select(.Outcome=="Fail")' "$RESULT_FILE"
+      exit 1
+    fi
+
+    COVERAGE=$(jq -r '.result.summary.testRunCoverage' "$RESULT_FILE" | tr -d '%')
+
+    echo "Coverage: $COVERAGE%"
+
+    if [ "$COVERAGE" -lt 75 ]; then
+      echo "Coverage below threshold"
+      exit 1
+    fi
+```
