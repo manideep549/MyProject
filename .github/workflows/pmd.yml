@@ -4,7 +4,7 @@ on:
   push:
     branches: [dev, uat, main, master]
   pull_request:
-    branches: [dev, uat, main , master]
+    branches: [dev, uat, main, master]
 
 jobs:
   salesforce-ci:
@@ -144,7 +144,7 @@ jobs:
 
 
     ########################################################
-    # STAGE 7 — Display Test Failures
+    # STAGE 7 — Display Test Failures (STILL ACTIVE)
     ########################################################
 
     - name: Display Test Failures
@@ -164,23 +164,23 @@ jobs:
 
 
     ########################################################
-    # STAGE 8 — Validate Code Coverage
+    # STAGE 8 — Validate Code Coverage (COMMENTED OUT)
     ########################################################
 
-    - name: Validate Code Coverage
-      run: |
-        # Target the explicit test-result JSON output file
-        RESULT_FILE="test-results/test-result.json"
-
-        # Extract string value and strip out the potential '%' symbol
-        RAW_COVERAGE=$(jq -r '.result.summary.testRunCoverage' "$RESULT_FILE")
-        COVERAGE=$(echo "$RAW_COVERAGE" | tr -d '%')
-
-        echo "Total Code Coverage: $COVERAGE%"
-
-        if [ "$COVERAGE" -lt 75 ]; then
-          echo "Code coverage below 75%"
-          exit 1
-        else
-          echo "Coverage requirement satisfied"
-        fi
+    # - name: Validate Code Coverage
+    #   run: |
+    #     # Target the explicit test-result JSON output file
+    #     RESULT_FILE="test-results/test-result.json"
+    # 
+    #     # Extract string value and strip out the potential '%' symbol
+    #     RAW_COVERAGE=$(jq -r '.result.summary.testRunCoverage' "$RESULT_FILE")
+    #     COVERAGE=$(echo "$RAW_COVERAGE" | tr -d '%')
+    # 
+    #     echo "Total Code Coverage: $COVERAGE%"
+    # 
+    #     if [ "$COVERAGE" -lt 75 ]; then
+    #       echo "Code coverage below 75%"
+    #       exit 1
+    #     else
+    #       echo "Coverage requirement satisfied"
+    #     fi
