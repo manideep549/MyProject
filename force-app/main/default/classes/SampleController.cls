@@ -1,16 +1,18 @@
 public with sharing class SampleController {
     
-    // PMD WILL FLAG THIS: Avoid using hardcoded variables without purpose
-    public static String dummyVariable;
-
+    /**
+     * Executes a clean process loop without triggering PMD violations.
+     * Evaluates a maximum record limit parameter safely.
+     */
     public static void runSampleProcess() {
         Integer counter = 0;
+        Integer maxLimit = 5;
 
-        // PMD WILL FLAG THIS: Empty while statement rule violation
-        while (counter < 0) {
-            // Intentional empty block to trigger PMD validation failure
+        // Clean loop with active operations inside the block
+        while (counter < maxLimit) {
+            counter++;
         }
         
-        System.debug('Process executed successfully.');
+        System.debug('Process completed loop count: ' + counter);
     }
 }
