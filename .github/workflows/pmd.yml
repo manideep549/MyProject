@@ -2,9 +2,9 @@ name: Salesforce PMD Validation and Test Coverage
 
 on:
   push:
-    branches: [dev, uat, main]
+    branches: [dev, uat, main, master]
   pull_request:
-    branches: [dev, uat, main]
+    branches: [dev, uat, main , master]
 
 jobs:
   salesforce-ci:
@@ -59,9 +59,12 @@ jobs:
     ########################################################
 
     - name: Authenticate Salesforce Org
+      shell: bash
       run: |
-        echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
-        sf org login sfdx-url --sfdx-url-file auth.txt --set-default --alias ciOrg
+        echo "${{ secrets.SFDX_AUTH_URL_dildev }}" | sf org login sfdx-url \
+          --alias ciOrg \
+          --set-default \
+          --sfdx-url-stdin
 
 
     ########################################################
@@ -80,33 +83,35 @@ jobs:
 
     - name: Prepare Test Classes
       run: |
-
         if [ ! -f "Testclass" ]; then
           echo "ERROR: Testclass file not found"
           exit 1
         fi
 
-        TEST_ARGS=""
+        TEST_CLASSES=""
 
         while IFS= read -r line
         do
           CLASS=$(echo $line | xargs)
 
           if [ ! -z "$CLASS" ]; then
-            TEST_ARGS="$TEST_ARGS --tests $CLASS"
+            if [ -z "$TEST_CLASSES" ]; then
+              TEST_CLASSES="$CLASS"
+            else
+              TEST_CLASSES="$TEST_CLASSES,$CLASS"
+            fi
           fi
-
         done < Testclass
 
-        if [ -z "$TEST_ARGS" ]; then
+        if [ -z "$TEST_CLASSES" ]; then
           echo "ERROR: No test classes found in Testclass file"
           exit 1
         fi
 
-        echo "Prepared Test Arguments:"
-        echo $TEST_ARGS
+        echo "Prepared Comma-Separated Test List:"
+        echo "$TEST_CLASSES"
 
-        echo "TEST_ARGS=$TEST_ARGS" >> $GITHUB_ENV
+        echo "TEST_CLASSES=$TEST_CLASSES" >> $GITHUB_ENV
 
 
     ########################################################
@@ -115,12 +120,11 @@ jobs:
 
     - name: Run Apex Tests
       run: |
-
         echo "Running Apex Tests"
 
         sf apex test run \
           --target-org ciOrg \
-          $TEST_ARGS \
+          --tests "$TEST_CLASSES" \
           --wait 30 \
           --result-format json \
           --code-coverage \
@@ -145,18 +149,16 @@ jobs:
 
     - name: Display Test Failures
       run: |
+        # Target the explicit test-result JSON output file
+        RESULT_FILE="test-results/test-result.json"
 
-        RESULT_FILE=$(ls test-results | grep ".json" | grep -v "codecoverage")
-
-        echo "Using result file: $RESULT_FILE"
-
-        FAILURES=$(jq '.result.summary.failing' test-results/$RESULT_FILE)
+        FAILURES=$(jq '.result.summary.failing' "$RESULT_FILE")
 
         echo "Failing Tests: $FAILURES"
 
         if [ "$FAILURES" -gt 0 ]; then
           echo "Some tests failed"
-          jq '.result.tests[] | select(.Outcome=="Fail")' test-results/$RESULT_FILE
+          jq '.result.tests[] | select(.Outcome=="Fail")' "$RESULT_FILE"
           exit 1
         fi
 
@@ -167,12 +169,12 @@ jobs:
 
     - name: Validate Code Coverage
       run: |
+        # Target the explicit test-result JSON output file
+        RESULT_FILE="test-results/test-result.json"
 
-        RESULT_FILE=$(ls test-results | grep ".json" | grep -v "codecoverage")
-
-        echo "Using result file: $RESULT_FILE"
-
-        COVERAGE=$(jq '.result.summary.testRunCoverage' test-results/$RESULT_FILE)
+        # Extract string value and strip out the potential '%' symbol
+        RAW_COVERAGE=$(jq -r '.result.summary.testRunCoverage' "$RESULT_FILE")
+        COVERAGE=$(echo "$RAW_COVERAGE" | tr -d '%')
 
         echo "Total Code Coverage: $COVERAGE%"
 
