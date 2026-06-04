@@ -2,9 +2,9 @@ name: Salesforce Delta CI (PMD + Tests)
 
 on:
 push:
-branches: [dev, uat, main]
+branches: [dev, uat, main,relase]
 pull_request:
-branches: [dev, uat, main]
+branches: [dev, uat, main,relase]
 
 jobs:
 salesforce-ci:
