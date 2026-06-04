@@ -1,7 +1,7 @@
 public with sharing class SampleController {
     
     /**
-     * Executes a clean process loop without triggering PMD violations.
+     * Executes a clean process loop without triggering PMD violations.miss
      * Evaluates a maximum record limit parameter safely.
      */
     public static void runSampleProcess() {
