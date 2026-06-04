@@ -24,7 +24,7 @@ jobs:
         sf version
 
 
-    # Install PMD
+    # Install PMD (FIXED DOWNLOAD URL PATH)
     - name: Install PMD
       run: |
         wget https://github.com
@@ -144,7 +144,7 @@ jobs:
 
 
     ########################################################
-    # STAGE 7 — Display Test Failures (FIXED PATH DETECTION)
+    # STAGE 7 — Display Test Failures
     ########################################################
 
     - name: Display Test Failures
