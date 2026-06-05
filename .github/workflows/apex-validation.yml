@@ -1,0 +1,44 @@
+name: Salesforce Apex Check-Only Validation
+
+on:
+  push:
+    branches: [mbcrm ]
+  pull_request:
+    branches: [ mbcrm ]
+    types: [ opened, synchronize, reopened ]
+
+jobs:
+  check-only-validation:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. Checkout your repository code
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # 2. Setup Node.js environment
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 3. Install Salesforce CLI (sf)
+      - name: Install Salesforce CLI
+        run: |
+          npm install -g @salesforce/cli
+          sf --version
+
+      # 4. Authenticate to the Target Salesforce Org
+      - name: Authenticate to Salesforce Org
+        run: |
+          echo "${{ secrets.SFDX_AUTH_URL_dildev  }}" > sfdx_auth.txt
+          sf org login sfdx-url --sfdx-url-file sfdx_auth.txt --set-default --alias targetOrg
+          rm sfdx_auth.txt
+
+      # 5. Check-Only Deployment Validation
+      - name: Validate Deployment and Run Local Tests
+        run: |
+          sf project deploy validate \
+            --source-dir force-app \
+            --test-level RunLocalTests \
+            --wait 45
