@@ -70,5 +70,5 @@ jobs:
               --test-level RunLocalTests \
               --wait 45
           else
-            echo "No Apex, LWC, or metadata modifications found to validate."
+            echo "No deployable metadata changes found."
           fi
