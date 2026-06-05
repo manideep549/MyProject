@@ -1,4 +1,4 @@
-name: Salesforce Apex Check-Only Validation
+name: Salesforce Apex & LWC Delta Check-Only Validation
 
 on:
   push:
@@ -8,13 +8,15 @@ on:
     types: [ opened, synchronize, reopened ]
 
 jobs:
-  check-only-validation:
+  delta-validation:
     runs-on: ubuntu-latest
     
     steps:
-      # 1. Checkout your repository code
+      # 1. Checkout repository with full history (crucial for git diff execution)
       - name: Checkout Source Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 3 # Fetches all history for all branches so Git can see changes
 
       # 2. Setup Node.js environment
       - name: Setup Node.js
@@ -28,17 +30,45 @@ jobs:
           npm install -g @salesforce/cli
           sf --version
 
-      # 4. Authenticate to the Target Salesforce Org
+      # 4. Install the sfdx-git-delta plugin
+      - name: Install sfdx-git-delta Plugin
+        run: |
+          echo 'y' | sf plugins install sfdx-git-delta
+          sf plugins
+
+      # 5. Generate Delta Manifests (Package.xml)
+      # This compares the current commit against the destination target branch
+      - name: Create Delta Packages
+        run: |
+          mkdir changed-sources
+          
+          # If triggered by a Pull Request, compare PR head to target base branch
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            sf sgd source delta --to "HEAD" --from "origin/${{ github.base_ref }}" --output changed-sources/ --generate-delta
+          else
+            # If a direct push, compare current commit to previous commit
+            sf sgd source delta --to "HEAD" --from "HEAD~1" --output changed-sources/ --generate-delta
+          fi
+          
+          echo "--- Dynamic package.xml generated for changed metadata ---"
+          cat changed-sources/package/package.xml
+
+      # 6. Authenticate to your Salesforce Org
       - name: Authenticate to Salesforce Org
         run: |
           echo "${{ secrets.SFDX_AUTH_URL_dildev  }}" > sfdx_auth.txt
           sf org login sfdx-url --sfdx-url-file sfdx_auth.txt --set-default --alias targetOrg
           rm sfdx_auth.txt
 
-      # 5. Check-Only Deployment Validation
-      - name: Validate Deployment and Run Local Tests
+      # 7. Check-Only Validation targeting ONLY generated delta elements
+      - name: Validate Delta Components
         run: |
-          sf project deploy validate \
-            --source-dir force-app \
-            --test-level RunLocalTests \
-            --wait 45
+          # Only run if the package.xml actually contains elements to deploy
+          if grep -q "<types>" changed-sources/package/package.xml; then
+            sf project deploy validate \
+              --manifest changed-sources/package/package.xml \
+              --test-level RunLocalTests \
+              --wait 45
+          else
+            echo "No Apex, LWC, or metadata modifications found to validate."
+          fi
