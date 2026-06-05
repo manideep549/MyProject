@@ -16,7 +16,7 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 3 # Fetches all history for all branches so Git can see changes
+          fetch-depth: 0 # Fetches all history for all branches so Git can see changes
 
       # 2. Setup Node.js environment
       - name: Setup Node.js
@@ -70,5 +70,5 @@ jobs:
               --test-level RunLocalTests \
               --wait 45
           else
-            echo "No Apex, LWC, or metadata modifications found to validate."
+              echo "No deployable metadata changes found."
           fi
