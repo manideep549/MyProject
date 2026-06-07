@@ -25,14 +25,19 @@
                 <default>false</default>
                 <label>fr</label>
             </value>
-            
-            <value>    
+
+            <value>
                 <fullName>fi</fullName>
                 <default>false</default>
                 <label>fi</label>
             </value>
             <value>
                 <fullName>bl</fullName>
+                <default>false</default>
+                <label>bl</label>
+            </value>
+            <value>
+                <fullName>uk</fullName>
                 <default>false</default>
                 <label>bl</label>
             </value>
