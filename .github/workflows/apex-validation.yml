@@ -16,7 +16,11 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
         with:
+<<<<<<< HEAD
           fetch-depth: 0 # Changed to 0 to fetch all history, ensuring accurate git diffs
+=======
+          fetch-depth: 0 # Fetches all history for all branches so Git can see changes
+>>>>>>> 043828f4e2e1f0110ff187443d1ae4c70d00edcf
 
       # 2. Setup Node.js environment
       - name: Setup Node.js
@@ -77,5 +81,10 @@ jobs:
               --test-level RunLocalTests \
               --wait 45
           else
+<<<<<<< HEAD
             echo "No deployable metadata changes found."
           fi
+=======
+              echo "No deployable metadata changes found."
+          fi
+>>>>>>> 043828f4e2e1f0110ff187443d1ae4c70d00edcf
