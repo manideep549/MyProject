@@ -2,10 +2,10 @@ name: Salesforce Apex & LWC Delta Check-Only Validation
 
 on:
   push:
-    branches: [mbcrm ]
+    branches: [mbcrm]
   pull_request:
-    branches: [ mbcrm ]
-    types: [ opened, synchronize, reopened ]
+    branches: [mbcrm]
+    types: [opened, synchronize, reopened]
 
 jobs:
   delta-validation:
@@ -16,7 +16,7 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Fetches all history for all branches so Git can see changes
+          fetch-depth: 0 # Changed to 0 to fetch all history, ensuring accurate git diffs
 
       # 2. Setup Node.js environment
       - name: Setup Node.js
@@ -37,7 +37,6 @@ jobs:
           sf plugins
 
       # 5. Generate Delta Manifests (Package.xml)
-      # This compares the current commit against the destination target branch
       - name: Create Delta Packages
         run: |
           mkdir changed-sources
@@ -53,14 +52,22 @@ jobs:
           echo "--- Dynamic package.xml generated for changed metadata ---"
           cat changed-sources/package/package.xml
 
-      # 6. Authenticate to your Salesforce Org
+      # 6. NEW: Archive and upload the Delta package.xml for Developer Review
+      - name: Upload Delta Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: delta-package-manifest
+          path: changed-sources/package/
+          retention-days: 7 # Optional: Keeps the files for 7 days before auto-deleting
+
+      # 7. Authenticate to your Salesforce Org
       - name: Authenticate to Salesforce Org
         run: |
-          echo "${{ secrets.SFDX_AUTH_URL_dildev  }}" > sfdx_auth.txt
+          echo "${{ secrets.SFDX_AUTH_URL_dildev }}" > sfdx_auth.txt
           sf org login sfdx-url --sfdx-url-file sfdx_auth.txt --set-default --alias targetOrg
           rm sfdx_auth.txt
 
-      # 7. Check-Only Validation targeting ONLY generated delta elements
+      # 8. Check-Only Validation targeting ONLY generated delta elements
       - name: Validate Delta Components
         run: |
           # Only run if the package.xml actually contains elements to deploy
@@ -70,5 +77,5 @@ jobs:
               --test-level RunLocalTests \
               --wait 45
           else
-              echo "No deployable metadata changes found."
+            echo "No deployable metadata changes found."
           fi
