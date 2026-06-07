@@ -36,12 +36,6 @@
                 <default>false</default>
                 <label>bl</label>
             </value>
-            <value>
-                <fullName>DE</fullName>
-                <default>false</default>
-                <label>DE</label>
-                
-            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>
