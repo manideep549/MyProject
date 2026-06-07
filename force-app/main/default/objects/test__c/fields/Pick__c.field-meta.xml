@@ -25,8 +25,8 @@
                 <default>false</default>
                 <label>fr</label>
             </value>
-            
-            <value>    
+
+            <value>
                 <fullName>fi</fullName>
                 <default>false</default>
                 <label>fi</label>
@@ -35,6 +35,12 @@
                 <fullName>bl</fullName>
                 <default>false</default>
                 <label>bl</label>
+            </value>
+            <value>
+                <fullName>DE</fullName>
+                <default>false</default>
+                <label>DE</label>
+                
             </value>
         </valueSetDefinition>
     </valueSet>
