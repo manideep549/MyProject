@@ -1,0 +1,130 @@
+name: Salesforce Delta Validate and Deploy
+
+on:
+push:
+branches:
+- mbcrm
+workflow_dispatch:
+
+jobs:
+validate-and-deploy:
+runs-on: ubuntu-latest
+
+```
+env:
+  SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL_dildev }}
+  ORG_ALIAS: rmteam@mbcrm.com.dildev
+
+steps:
+
+  # Checkout full repository history
+  - name: Checkout Source Code
+    uses: actions/checkout@v4
+    with:
+      fetch-depth: 0
+
+  # Setup Node.js
+  - name: Setup Node.js
+    uses: actions/setup-node@v4
+    with:
+      node-version: '20'
+
+  # Install Salesforce CLI
+  - name: Install Salesforce CLI
+    run: |
+      npm install -g @salesforce/cli
+      sf --version
+
+  # Install SGD Plugin
+  - name: Install sfdx-git-delta
+    run: |
+      echo y | sf plugins install sfdx-git-delta
+
+  # Authenticate
+  - name: Authenticate Salesforce Org
+    run: |
+      echo "$SFDX_AUTH_URL" > auth.txt
+      sf org login sfdx-url \
+        --sfdx-url-file auth.txt \
+        --set-default \
+        --alias "$ORG_ALIAS"
+      rm auth.txt
+
+  # Generate Delta Package
+  - name: Generate Delta Package
+    run: |
+      mkdir changed-sources
+
+      if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+        sf sgd source delta \
+          --to HEAD \
+          --from HEAD~1 \
+          --output changed-sources \
+          --generate-delta
+      else
+        sf sgd source delta \
+          --to HEAD \
+          --from HEAD~1 \
+          --output changed-sources \
+          --generate-delta
+      fi
+
+      echo "Generated Package.xml"
+      cat changed-sources/package/package.xml
+
+  # Upload artifact for troubleshooting
+  - name: Upload Delta Package
+    uses: actions/upload-artifact@v4
+    with:
+      name: delta-package
+      path: changed-sources/package
+
+  # Validation Stage
+  - name: Validate Delta Components
+    run: |
+      if grep -q "<types>" changed-sources/package/package.xml; then
+
+        echo "Starting Validation..."
+
+        sf project deploy validate \
+          --manifest changed-sources/package/package.xml \
+          --target-org "$ORG_ALIAS" \
+          --test-level RunLocalTests \
+          --wait 60
+
+        echo "Validation Successful"
+
+      else
+        echo "No metadata changes found."
+        exit 0
+      fi
+
+  # Deployment Stage
+  - name: Deploy Delta Components
+    run: |
+      echo "Starting Deployment..."
+
+      DEPLOY_RESULT=$(sf project deploy start \
+        --manifest changed-sources/package/package.xml \
+        --target-org "$ORG_ALIAS" \
+        --test-level NoTestRun \
+        --wait 60 \
+        --json || true)
+
+      echo "$DEPLOY_RESULT" | jq '.'
+
+      DEPLOY_STATUS=$(echo "$DEPLOY_RESULT" | jq -r '.result.status // empty')
+
+      if [ "$DEPLOY_STATUS" != "Succeeded" ]; then
+        echo "::error::Deployment failed"
+        exit 1
+      fi
+
+      echo "Deployment Successful"
+
+  # Logout
+  - name: Logout
+    if: always()
+    run: |
+      sf org logout --all --no-prompt
+```
