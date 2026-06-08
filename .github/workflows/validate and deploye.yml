@@ -1,14 +1,15 @@
-name: Salesforce Delta Validate and Deploy test class
+name: Salesforce Delta Validate and Deploy
 
 on:
   push:
     branches:
-      - mbcrm
+      - FB_test_class_validation_implementation
   workflow_dispatch:
 
 jobs:
   validate-and-deploy:
     runs-on: ubuntu-latest
+
     env:
       SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL_dildev }}
       ORG_ALIAS: rmteam@mbcrm.com.dildev
@@ -50,66 +51,59 @@ jobs:
             --from HEAD~1 \
             --output changed-sources \
             --generate-delta
-          
+
           echo "Generated package.xml:"
           cat changed-sources/package/package.xml
 
-      - name: Upload Delta Package
-        uses: actions/upload-artifact@v4
-        with:
-          name: delta-package
-          path: changed-sources/package
+     # - name: Upload Delta Package
+      #  uses: actions/upload-artifact@v4
+      #  with:
+       #   name: delta-package
+        #  path: changed-sources/package
 
       - name: Read Test Classes
         run: |
           if [ ! -f config/test-classes.txt ]; then
-            echo "No test-classes.txt found. Skipping specified tests."
+            echo "No test-classes.txt found."
             echo "TEST_CLASSES=" >> $GITHUB_ENV
             exit 0
           fi
 
           TEST_CLASSES=$(grep -v '^[[:space:]]*$' config/test-classes.txt | tr '\n' ',' | sed 's/,$//')
-
           echo "TEST_CLASSES=$TEST_CLASSES" >> $GITHUB_ENV
 
           if [ -n "$TEST_CLASSES" ]; then
             echo "Running specified tests:"
             echo "$TEST_CLASSES"
           else
-            echo "No test classes specified. Tests will be skipped."
+            echo "No test classes specified."
           fi
 
       - name: Validate Delta Components
         run: |
           if grep -q "<types>" changed-sources/package/package.xml; then
-
             echo "Starting Validation..."
 
             if [ -n "$TEST_CLASSES" ]; then
-
-              echo "Running validation with specified tests..."
-
-              sf project deploy validate \
+              echo "Validation with specified tests..."
+              sf deploy metadata \
                 --manifest changed-sources/package/package.xml \
                 --target-org "$ORG_ALIAS" \
                 --test-level RunSpecifiedTests \
                 --tests "$TEST_CLASSES" \
-                --wait 60
-
+                --wait 60 \
+                --dry-run
             else
-
-              echo "No tests specified. Running metadata validation only..."
-
-              sf project deploy validate \
+              echo "Validation without tests..."
+              sf deploy metadata \
                 --manifest changed-sources/package/package.xml \
                 --target-org "$ORG_ALIAS" \
                 --test-level NoTestRun \
-                --wait 60
-
+                --wait 60 \
+                --dry-run
             fi
 
-            echo "Validation Successful"
-
+            echo "✅ Validation Successful"
           else
             echo "No deployable metadata changes found."
             exit 0
@@ -118,8 +112,8 @@ jobs:
       - name: Deploy Delta Components
         run: |
           echo "Starting Deployment..."
-          # Running deploy start; using jq to parse the response for status
-          DEPLOY_RESULT=$(sf project deploy start \
+
+          DEPLOY_RESULT=$(sf deploy metadata \
             --manifest changed-sources/package/package.xml \
             --target-org "$ORG_ALIAS" \
             --test-level NoTestRun \
@@ -135,7 +129,8 @@ jobs:
             echo "$DEPLOY_RESULT" | jq -r '.result.details.componentFailures[]?.problem // "Unknown error"'
             exit 1
           fi
-          echo "Deployment Successful"
+
+          echo "✅ Deployment Successful"
 
       - name: Logout
         if: always()
