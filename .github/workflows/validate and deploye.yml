@@ -1,4 +1,4 @@
-name: Salesforce Delta Validate and Deploy
+name: Salesforce Delta Validate and Deploy test class
 
 on:
   push:
