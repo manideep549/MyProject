@@ -16,31 +16,25 @@ env:
   ORG_ALIAS: rmteam@mbcrm.com.dildev
 
 steps:
-
-  # Checkout full repository history
   - name: Checkout Source Code
     uses: actions/checkout@v4
     with:
       fetch-depth: 0
 
-  # Setup Node.js
   - name: Setup Node.js
     uses: actions/setup-node@v4
     with:
       node-version: '20'
 
-  # Install Salesforce CLI
   - name: Install Salesforce CLI
     run: |
       npm install -g @salesforce/cli
       sf --version
 
-  # Install SGD Plugin
   - name: Install sfdx-git-delta
     run: |
       echo y | sf plugins install sfdx-git-delta
 
-  # Authenticate
   - name: Authenticate Salesforce Org
     run: |
       echo "$SFDX_AUTH_URL" > auth.txt
@@ -50,36 +44,43 @@ steps:
         --alias "$ORG_ALIAS"
       rm auth.txt
 
-  # Generate Delta Package
   - name: Generate Delta Package
     run: |
-      mkdir changed-sources
+      mkdir -p changed-sources
 
-      if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-        sf sgd source delta \
-          --to HEAD \
-          --from HEAD~1 \
-          --output changed-sources \
-          --generate-delta
-      else
-        sf sgd source delta \
-          --to HEAD \
-          --from HEAD~1 \
-          --output changed-sources \
-          --generate-delta
-      fi
+      sf sgd source delta \
+        --to HEAD \
+        --from HEAD~1 \
+        --output changed-sources \
+        --generate-delta
 
-      echo "Generated Package.xml"
+      echo "Generated package.xml:"
       cat changed-sources/package/package.xml
 
-  # Upload artifact for troubleshooting
   - name: Upload Delta Package
     uses: actions/upload-artifact@v4
     with:
       name: delta-package
       path: changed-sources/package
 
-  # Validation Stage
+  - name: Read Test Classes
+    run: |
+      if [ ! -f config/test-classes.txt ]; then
+        echo "::error::config/test-classes.txt not found"
+        exit 1
+      fi
+
+      TEST_CLASSES=$(paste -sd "," config/test-classes.txt)
+
+      if [ -z "$TEST_CLASSES" ]; then
+        echo "::error::No test classes found in config/test-classes.txt"
+        exit 1
+      fi
+
+      echo "TEST_CLASSES=$TEST_CLASSES" >> $GITHUB_ENV
+      echo "Running tests:"
+      echo "$TEST_CLASSES"
+
   - name: Validate Delta Components
     run: |
       if grep -q "<types>" changed-sources/package/package.xml; then
@@ -89,17 +90,17 @@ steps:
         sf project deploy validate \
           --manifest changed-sources/package/package.xml \
           --target-org "$ORG_ALIAS" \
-          --test-level RunLocalTests \
+          --test-level RunSpecifiedTests \
+          --tests "$TEST_CLASSES" \
           --wait 60
 
         echo "Validation Successful"
 
       else
-        echo "No metadata changes found."
+        echo "No deployable metadata changes found."
         exit 0
       fi
 
-  # Deployment Stage
   - name: Deploy Delta Components
     run: |
       echo "Starting Deployment..."
@@ -117,12 +118,16 @@ steps:
 
       if [ "$DEPLOY_STATUS" != "Succeeded" ]; then
         echo "::error::Deployment failed"
+
+        echo "$DEPLOY_RESULT" | jq -r '
+          .result.details.componentFailures[]?.problem
+        '
+
         exit 1
       fi
 
       echo "Deployment Successful"
 
-  # Logout
   - name: Logout
     if: always()
     run: |
