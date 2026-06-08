@@ -31,6 +31,16 @@
                 <default>false</default>
                 <label>fi</label>
             </value>
+            <value>
+                <fullName>bl</fullName>
+                <default>false</default>
+                <label>bl</label>
+            </value>
+                <value>
+                <fullName>HR</fullName>
+                <default>false</default>
+                <label>HR</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>
