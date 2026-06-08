@@ -3,7 +3,7 @@ name: Salesforce Delta Validate and Deploy
 on:
   push:
     branches:
-      - FB_test_class_validation_implementation
+      - mbcrm3
   workflow_dispatch:
 
 jobs:
