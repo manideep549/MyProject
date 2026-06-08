@@ -2,10 +2,10 @@ name: Salesforce Apex & LWC Delta Check-Only Validation
 
 on:
   push:
-    branches: [mbcrm]
+    #branches: [mbcrm]
   pull_request:
-    branches: [mbcrm]
-    types: [opened, synchronize, reopened]
+ #   branches: [mbcrm]
+#    types: [opened, synchronize, reopened]
 
 jobs:
   delta-validation:
