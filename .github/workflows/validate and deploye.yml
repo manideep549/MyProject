@@ -50,8 +50,8 @@ jobs:
           mkdir -p changed-sources
           sf sgd source delta \
             --to HEAD \
-            --from HEAD~1 \
-            --output changed-sources \
+            --from origin/${{ github.base_ref }} \
+             --output changed-sources \
             --generate-delta
 
           echo "Generated package.xml:"
