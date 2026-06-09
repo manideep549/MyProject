@@ -7,12 +7,14 @@ on:
   workflow_dispatch:
 
 jobs:
-  validate-and-deploy:
+  # STAGE 1: VALIDATION (Runs automatically)
+  validate:
     runs-on: ubuntu-latest
-
     env:
       SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL_dildev }}
       ORG_ALIAS: rmteam@mbcrm.com.dildev
+    outputs:
+      has_changes: ${{ steps.check_changes.outputs.has_changes }}
 
     steps:
       - name: Checkout Source Code
@@ -55,13 +57,17 @@ jobs:
           echo "Generated package.xml:"
           cat changed-sources/package/package.xml
 
-     # - name: Upload Delta Package
-      #  uses: actions/upload-artifact@v4
-      #  with:
-       #   name: delta-package
-        #  path: changed-sources/package
+      - name: Check if there are metadata changes
+        id: check_changes
+        run: |
+          if grep -q "<types>" changed-sources/package/package.xml; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Read Test Classes
+        if: steps.check_changes.outputs.has_changes == 'true'
         run: |
           if [ ! -f config/test-classes.txt ]; then
             echo "No test-classes.txt found."
@@ -79,49 +85,95 @@ jobs:
             echo "No test classes specified."
           fi
 
-      - name: Validate Delta Components
+      - name: Validate Delta Components (Dry-Run)
+        if: steps.check_changes.outputs.has_changes == 'true'
+       # working-directory: bin/Source
         run: |
-          if grep -q "<types>" changed-sources/package/package.xml; then
-            echo "Starting Validation..."
-
-            if [ -n "$TEST_CLASSES" ]; then
-              echo "Validation with specified tests..."
-              sf deploy metadata \
-                --manifest changed-sources/package/package.xml \
-                --target-org "$ORG_ALIAS" \
-                --test-level RunSpecifiedTests \
-                --tests "$TEST_CLASSES" \
-                --wait 60 \
-                --dry-run
-            else
-              echo "Validation without tests..."
-              sf deploy metadata \
-                --manifest changed-sources/package/package.xml \
-                --target-org "$ORG_ALIAS" \
-                --test-level NoTestRun \
-                --wait 60 \
-                --dry-run
-            fi
-
-            echo "✅ Validation Successful"
+          if [ -n "$TEST_CLASSES" ]; then
+            sf deploy metadata \
+              --manifest ../../changed-sources/package/package.xml \
+              --target-org "$ORG_ALIAS" \
+              --test-level RunSpecifiedTests \
+              --tests "$TEST_CLASSES" \
+              --wait 60 \
+              --dry-run
           else
-            echo "No deployable metadata changes found."
-            exit 0
+            sf deploy metadata \
+              --manifest ../../changed-sources/package/package.xml \
+              --target-org "$ORG_ALIAS" \
+              --test-level NoTestRun \
+              --wait 60 \
+              --dry-run
           fi
+          echo "✅ Validation Successful"
+
+      - name: Logout
+        if: always()
+        run: |
+          sf org logout --all --no-prompt
+
+  # STAGE 2: DEPLOYMENT (Pauses here for RM Team approval)
+  deploy:
+    runs-on: ubuntu-latest
+    needs: validate # Ensures validation must pass first
+    if: needs.validate.outputs.has_changes == 'true'
+    
+    # This links the job to your GitHub environment rules
+    environment: production-dildev 
+    
+    env:
+      SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL_dildev }}
+      ORG_ALIAS: rmteam@mbcrm.com.dildev
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Salesforce CLI
+        run: |
+          npm install -g @salesforce/cli
+
+      - name: Install sfdx-git-delta
+        run: |
+          echo y | sf plugins install sfdx-git-delta
+
+      - name: Authenticate Salesforce Org
+        run: |
+          echo "$SFDX_AUTH_URL" > auth.txt
+          sf org login sfdx-url \
+            --sfdx-url-file auth.txt \
+            --set-default \
+            --alias "$ORG_ALIAS"
+          rm auth.txt
+
+      - name: Regenerate Delta Package for Deployment
+        run: |
+          mkdir -p changed-sources
+          sf sgd source delta \
+            --to HEAD \
+            --from HEAD~1 \
+            --output changed-sources \
+            --generate-delta
 
       - name: Deploy Delta Components
+        working-directory: bin/Source
         run: |
           echo "Starting Deployment..."
-
           DEPLOY_RESULT=$(sf deploy metadata \
-            --manifest changed-sources/package/package.xml \
+            --manifest ../../changed-sources/package/package.xml \
             --target-org "$ORG_ALIAS" \
             --test-level NoTestRun \
             --wait 60 \
             --json || true)
 
           echo "$DEPLOY_RESULT" | jq '.'
-
           DEPLOY_STATUS=$(echo "$DEPLOY_RESULT" | jq -r '.result.status // empty')
 
           if [ "$DEPLOY_STATUS" != "Succeeded" ]; then
@@ -129,7 +181,6 @@ jobs:
             echo "$DEPLOY_RESULT" | jq -r '.result.details.componentFailures[]?.problem // "Unknown error"'
             exit 1
           fi
-
           echo "✅ Deployment Successful"
 
       - name: Logout
