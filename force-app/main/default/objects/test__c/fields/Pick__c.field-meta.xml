@@ -31,10 +31,15 @@
                 <default>false</default>
                 <label>fi</label>
             </value>
-            <value>
-                <fullName>bl</fullName>
+                        <value>
+                <fullName>hr</fullName>
                 <default>false</default>
-                <label>bl</label>
+                <label>hr</label>
+            </value>
+                                    <value>
+                <fullName>dh</fullName>
+                <default>false</default>
+                <label>dh</label>
             </value>
         </valueSetDefinition>
     </valueSet>
