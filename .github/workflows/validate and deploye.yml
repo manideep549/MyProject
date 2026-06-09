@@ -47,11 +47,25 @@ jobs:
 
       - name: Generate Delta Package
         run: |
+          # Fallback mechanism: Use base_ref for PRs, or event.before for direct pushes
+          if [ -n "${{ github.base_ref }}" ]; then
+            FROM_REF="origin/${{ github.base_ref }}"
+          else
+            FROM_REF="${{ github.event.before }}"
+          fi
+          
+          # If it's a brand new branch push with no history, fallback to HEAD~1
+          if [ "$FROM_REF" = "0000000000000000000000000000000000000000" ] || [ -z "$FROM_REF" ]; then
+            FROM_REF="HEAD~1"
+          fi
+
+          echo "Comparing HEAD against baseline: $FROM_REF"
           mkdir -p changed-sources
+          
           sf sgd source delta \
             --to HEAD \
-            --from origin/${{ github.base_ref }} \
-             --output changed-sources \
+            --from "$FROM_REF" \
+            --output-dir changed-sources \
             --generate-delta
 
           echo "Generated package.xml:"
@@ -87,7 +101,7 @@ jobs:
 
       - name: Validate Delta Components (Dry-Run)
         if: steps.check_changes.outputs.has_changes == 'true'
-       # working-directory: bin/Source
+        working-directory: bin/Source
         run: |
           if [ -n "$TEST_CLASSES" ]; then
             sf deploy metadata \
@@ -115,12 +129,9 @@ jobs:
   # STAGE 2: DEPLOYMENT (Pauses here for RM Team approval)
   deploy:
     runs-on: ubuntu-latest
-    needs: validate # Ensures validation must pass first
+    needs: validate 
     if: needs.validate.outputs.has_changes == 'true'
-    
-    # This links the job to your GitHub environment rules
-    environment: production-dildev 
-    
+    environment: production-dildev         
     env:
       SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL_dildev }}
       ORG_ALIAS: rmteam@mbcrm.com.dildev
@@ -155,11 +166,21 @@ jobs:
 
       - name: Regenerate Delta Package for Deployment
         run: |
+          if [ -n "${{ github.base_ref }}" ]; then
+            FROM_REF="origin/${{ github.base_ref }}"
+          else
+            FROM_REF="${{ github.event.before }}"
+          fi
+          
+          if [ "$FROM_REF" = "0000000000000000000000000000000000000000" ] || [ -z "$FROM_REF" ]; then
+            FROM_REF="HEAD~1"
+          fi
+
           mkdir -p changed-sources
           sf sgd source delta \
             --to HEAD \
-            --from HEAD~1 \
-            --output changed-sources \
+            --from "$FROM_REF" \
+            --output-dir changed-sources \
             --generate-delta
 
       - name: Deploy Delta Components
