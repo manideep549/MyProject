@@ -109,14 +109,14 @@ jobs:
               --target-org "$ORG_ALIAS" \
               --test-level RunSpecifiedTests \
               --tests "$TEST_CLASSES" \
-              --wait 60 \
+              --wait 120 \
               --dry-run
           else
             sf deploy metadata \
               --manifest ../../changed-sources/package/package.xml \
               --target-org "$ORG_ALIAS" \
               --test-level NoTestRun \
-              --wait 60 \
+              --wait 120 \
               --dry-run
           fi
           echo "✅ Validation Successful"
