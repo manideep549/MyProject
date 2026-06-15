@@ -1,11 +1,11 @@
 name: Salesforce Delta Validate and Deploy
-
+ 
 on:
   push:
     branches:
       - mbcrm3
   workflow_dispatch:
-
+ 
 jobs:
   # STAGE 1: VALIDATION (Runs automatically)
   validate:
@@ -13,29 +13,30 @@ jobs:
     env:
       SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL_dildev }}
       ORG_ALIAS: rmteam@mbcrm.com.dildev
+    # FIXED: Map the job-level output to the specific step output
     outputs:
       has_changes: ${{ steps.check_changes.outputs.has_changes }}
-
+ 
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
+ 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
+ 
       - name: Install Salesforce CLI
         run: |
           npm install -g @salesforce/cli
           sf --version
-
+ 
       - name: Install sfdx-git-delta
         run: |
           echo y | sf plugins install sfdx-git-delta
-
+ 
       - name: Authenticate Salesforce Org
         run: |
           echo "$SFDX_AUTH_URL" > auth.txt
@@ -44,7 +45,7 @@ jobs:
             --set-default \
             --alias "$ORG_ALIAS"
           rm auth.txt
-
+ 
       - name: Generate Delta Package
         run: |
           # Fallback mechanism: Use base_ref for PRs, or event.before for direct pushes
@@ -58,7 +59,7 @@ jobs:
           if [ "$FROM_REF" = "0000000000000000000000000000000000000000" ] || [ -z "$FROM_REF" ]; then
             FROM_REF="HEAD~1"
           fi
-
+ 
           echo "Comparing HEAD against baseline: $FROM_REF"
           mkdir -p changed-sources
           
@@ -67,19 +68,19 @@ jobs:
             --from "$FROM_REF" \
             --output-dir changed-sources \
             --generate-delta
-
+ 
           echo "Generated package.xml:"
           cat changed-sources/package/package.xml
-
+ 
       - name: Check if there are metadata changes
-        id: check_changes
+        id: check_changes # This ID matches the job output mapping above
         run: |
           if grep -q "<types>" changed-sources/package/package.xml; then
-            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
           fi
-
+ 
       - name: Read Test Classes
         if: steps.check_changes.outputs.has_changes == 'true'
         run: |
@@ -88,17 +89,17 @@ jobs:
             echo "TEST_CLASSES=" >> $GITHUB_ENV
             exit 0
           fi
-
+ 
           TEST_CLASSES=$(grep -v '^[[:space:]]*$' config/test-classes.txt | tr '\n' ',' | sed 's/,$//')
           echo "TEST_CLASSES=$TEST_CLASSES" >> $GITHUB_ENV
-
+ 
           if [ -n "$TEST_CLASSES" ]; then
             echo "Running specified tests:"
             echo "$TEST_CLASSES"
           else
             echo "No test classes specified."
           fi
-
+ 
       - name: Validate Delta Components (Dry-Run)
         if: steps.check_changes.outputs.has_changes == 'true'
         working-directory: bin/Source
@@ -120,41 +121,41 @@ jobs:
               --dry-run
           fi
           echo "✅ Validation Successful"
-
+ 
       - name: Logout
         if: always()
         run: |
           sf org logout --all --no-prompt
-
+ 
   # STAGE 2: DEPLOYMENT (Pauses here for RM Team approval)
   deploy:
     runs-on: ubuntu-latest
-    needs: validate 
+    needs: validate
     if: needs.validate.outputs.has_changes == 'true'
-    environment: production-dildev         
+    environment: production-dildev # Triggers approval notification based on repo settings        
     env:
       SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL_dildev }}
       ORG_ALIAS: rmteam@mbcrm.com.dildev
-
+ 
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
+ 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
+ 
       - name: Install Salesforce CLI
         run: |
           npm install -g @salesforce/cli
-
+ 
       - name: Install sfdx-git-delta
         run: |
           echo y | sf plugins install sfdx-git-delta
-
+ 
       - name: Authenticate Salesforce Org
         run: |
           echo "$SFDX_AUTH_URL" > auth.txt
@@ -163,7 +164,7 @@ jobs:
             --set-default \
             --alias "$ORG_ALIAS"
           rm auth.txt
-
+ 
       - name: Regenerate Delta Package for Deployment
         run: |
           if [ -n "${{ github.base_ref }}" ]; then
@@ -175,14 +176,14 @@ jobs:
           if [ "$FROM_REF" = "0000000000000000000000000000000000000000" ] || [ -z "$FROM_REF" ]; then
             FROM_REF="HEAD~1"
           fi
-
+ 
           mkdir -p changed-sources
           sf sgd source delta \
             --to HEAD \
             --from "$FROM_REF" \
             --output-dir changed-sources \
             --generate-delta
-
+ 
       - name: Deploy Delta Components
         working-directory: bin/Source
         run: |
@@ -193,17 +194,17 @@ jobs:
             --test-level NoTestRun \
             --wait 60 \
             --json || true)
-
+ 
           echo "$DEPLOY_RESULT" | jq '.'
           DEPLOY_STATUS=$(echo "$DEPLOY_RESULT" | jq -r '.result.status // empty')
-
+ 
           if [ "$DEPLOY_STATUS" != "Succeeded" ]; then
             echo "::error::Deployment failed"
             echo "$DEPLOY_RESULT" | jq -r '.result.details.componentFailures[]?.problem // "Unknown error"'
             exit 1
           fi
           echo "✅ Deployment Successful"
-
+ 
       - name: Logout
         if: always()
         run: |
