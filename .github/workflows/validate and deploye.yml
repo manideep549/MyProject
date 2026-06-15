@@ -1,7 +1,7 @@
 name: Salesforce Delta Validate and Deploy
 
 on:
-  push:
+  pull_request:
     branches:
       - mbcrm3
   workflow_dispatch:
