@@ -102,7 +102,7 @@ jobs:
  
       - name: Validate Delta Components (Dry-Run)
         if: steps.check_changes.outputs.has_changes == 'true'
-        working-directory: bin/Source
+       # working-directory: bin/Source
         run: |
           if [ -n "$TEST_CLASSES" ]; then
             sf deploy metadata \
