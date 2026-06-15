@@ -133,7 +133,7 @@ jobs:
     if: |
       needs.validate.result == 'success' &&
       needs.validate.outputs.has_changes == 'true'
-    environment: production-dildev
+    environment: dildev-sandbox
     env:
       SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL_dildev }}
       ORG_ALIAS: rmteam@mbcrm.com.dildev
