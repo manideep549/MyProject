@@ -36,9 +36,9 @@
                 <label>hr</label>
             </value>
              <value>
-                <fullName>dh</fullName>
+                <fullName>DH</fullName>
                 <default>false</default>
-                <label>dh</label>
+                <label>DH</label>
             </value>
         </valueSetDefinition>
     </valueSet>
