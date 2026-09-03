@@ -1,33 +1,65 @@
-name: Test Jira PR Integration
+name: Link PR to Jira
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  test-jira-pr:
+  link-pr-to-jira:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Read PR title and Jira key
+      - name: Link PR to Jira
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
         run: |
-          echo "======================================"
-          echo "PR Number : $PR_NUMBER"
-          echo "PR Title  : $PR_TITLE"
-          echo "PR URL    : $PR_URL"
-          echo "======================================"
+          echo "PR Title: $PR_TITLE"
+          echo "PR Number: $PR_NUMBER"
+          echo "PR URL: $PR_URL"
 
+          # Extract Jira key from PR title
           JIRA_KEY=$(echo "$PR_TITLE" | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | head -1)
-
-          echo "Extracted Jira Key: $JIRA_KEY"
 
           if [ -z "$JIRA_KEY" ]; then
             echo "::error::No Jira ticket found in PR title"
             exit 1
           fi
 
-          echo "✅ Jira ticket found: $JIRA_KEY"
+          echo "Jira Key: $JIRA_KEY"
+
+          # Create Jira remote link
+          RESPONSE=$(curl -sS \
+            -w "\n%{http_code}" \
+            -X POST \
+            -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/remotelink" \
+            --data @- <<EOF
+          {
+            "object": {
+              "url": "$PR_URL",
+              "title": "GitHub PR #$PR_NUMBER",
+              "summary": "$PR_TITLE"
+            }
+          }
+          EOF
+          )
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Failed to link PR to Jira"
+            exit 1
+          fi
+
+          echo "✅ PR successfully linked to $JIRA_KEY"
