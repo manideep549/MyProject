@@ -1,0 +1,144 @@
+name: Link PR to Jira
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  link-pr-to-jira:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # 1. Link PR to Jira
+      - name: Link PR to Jira
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+
+        run: |
+          echo "PR Title: $PR_TITLE"
+          echo "PR Number: $PR_NUMBER"
+          echo "PR URL: $PR_URL"
+
+          # Extract Jira key from PR title
+          JIRA_KEY=$(echo "$PR_TITLE" | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+
+          if [ -z "$JIRA_KEY" ]; then
+            echo "::error::No Jira ticket found in PR title"
+            exit 1
+          fi
+
+          echo "Jira Key: $JIRA_KEY"
+
+          # Make Jira key available to the next step
+          echo "JIRA_KEY=$JIRA_KEY" >> "$GITHUB_ENV"
+
+          # Create Jira remote link
+          RESPONSE=$(curl -sS \
+            -w "\n%{http_code}" \
+            -X POST \
+            -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/remotelink" \
+            --data @- <<EOF
+          {
+            "object": {
+              "url": "$PR_URL",
+              "title": "GitHub PR #$PR_NUMBER",
+              "summary": "$PR_TITLE"
+            }
+          }
+          EOF
+          )
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Failed to link PR to Jira"
+            exit 1
+          fi
+
+          echo "✅ PR successfully linked to $JIRA_KEY"
+
+
+      # 2. Add comment to Jira
+      - name: Add Jira Comment
+        if: success()
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+
+        run: |
+          echo "Adding comment to Jira issue: $JIRA_KEY"
+
+          RESPONSE=$(curl -sS \
+            -w "\n%{http_code}" \
+            -X POST \
+            -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/comment" \
+            --data @- <<EOF
+          {
+            "body": {
+              "type": "doc",
+              "version": 1,
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "✅ GitHub PR #$PR_NUMBER has been successfully linked to $JIRA_KEY."
+                    }
+                  ]
+                },
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "PR: $PR_URL",
+                      "marks": [
+                        {
+                          "type": "link",
+                          "attrs": {
+                            "href": "$PR_URL"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+          EOF
+          )
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Failed to add Jira comment"
+            exit 1
+          fi
+
+          echo "✅ Jira comment added successfully to $JIRA_KEY"

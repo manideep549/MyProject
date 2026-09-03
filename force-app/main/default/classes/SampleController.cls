@@ -8,7 +8,7 @@ public with sharing class SampleController {
         Integer counter = 0;
         Integer maxLimit = 5;
 
-        // Clean loop with active operations inside the block
+        // Clean loop with active operations inside the block this test
         while (counter < maxLimit) {
             counter++;
         }

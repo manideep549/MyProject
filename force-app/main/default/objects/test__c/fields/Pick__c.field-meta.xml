@@ -25,15 +25,20 @@
                 <default>false</default>
                 <label>fr</label>
             </value>
-            <value>    
+            <value>
                 <fullName>fi</fullName>
                 <default>false</default>
                 <label>fi</label>
             </value>
-            <value>
-                <fullName>bl</fullName>
+             <value>
+                <fullName>hr</fullName>
                 <default>false</default>
-                <label>bl</label>
+                <label>hr</label>
+            </value>
+             <value>
+                <fullName>DH</fullName>
+                <default>false</default>
+                <label>DH</label>
             </value>
         </valueSetDefinition>
     </valueSet>
