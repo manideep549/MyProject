@@ -1,0 +1,33 @@
+name: Test Jira PR Integration
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  test-jira-pr:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Read PR title and Jira key
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          echo "======================================"
+          echo "PR Number : $PR_NUMBER"
+          echo "PR Title  : $PR_TITLE"
+          echo "PR URL    : $PR_URL"
+          echo "======================================"
+
+          JIRA_KEY=$(echo "$PR_TITLE" | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+
+          echo "Extracted Jira Key: $JIRA_KEY"
+
+          if [ -z "$JIRA_KEY" ]; then
+            echo "::error::No Jira ticket found in PR title"
+            exit 1
+          fi
+
+          echo "✅ Jira ticket found: $JIRA_KEY"
