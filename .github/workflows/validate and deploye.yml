@@ -1,7 +1,7 @@
 name: Salesforce Delta Validate and Deploy
 
 on:
-  push:
+  pull_request:
     branches:
       - mbcrm3
   workflow_dispatch:
@@ -30,7 +30,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
 
       - name: Install Salesforce CLI
         run: |
@@ -133,7 +133,7 @@ jobs:
     if: |
       needs.validate.result == 'success' &&
       needs.validate.outputs.has_changes == 'true'
-    environment: dildev-sandbox
+    environment: production-dildev
     env:
       SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL_dildev }}
       ORG_ALIAS: rmteam@mbcrm.com.dildev
