@@ -49,30 +49,109 @@ jobs:
             --set-default \
             --alias "$ORG_ALIAS"
           rm auth.txt
-
-      - name: Generate Delta Package
+      - name: Filter Committed Files
+        shell: bash
         run: |
-          if [ -n "${{ github.base_ref }}" ]; then
-            FROM_REF="origin/${{ github.base_ref }}"
-          else
-            FROM_REF="${{ github.event.before }}"
-          fi
+          source="$GITHUB_WORKSPACE"
+          printf "Present working directory %s directory\n" "$source"
+          echo " "
+          cd "$source" || return
+          
+          # Create the staging directory (equivalent to Build.ArtifactStagingDirectory)
+          destdir="$GITHUB_WORKSPACE/artifacts_staging"
+          mkdir -p "$destdir"
 
-          if [ "$FROM_REF" = "0000000000000000000000000000000000000000" ] || [ -z "$FROM_REF" ]; then
-            FROM_REF="HEAD~1"
-          fi
+          git diff HEAD~1 HEAD --name-only --diff-filter=MRCAD > diff.txt
+          
+          filelist="diff.txt"
+          while read -r line; do
+            # Skip if the file was deleted in git (cp will fail if it doesn't exist)
+            if [ ! -f "$line" ]; then
+              echo "File deleted or does not exist: $line"
+              continue
+            fi
 
-          echo "Comparing HEAD against baseline: $FROM_REF"
-          mkdir -p changed-sources
+            full_name=$line
+            folderpath=${full_name%/*} 
+            filebase=${full_name##*/} 
+            fileext=${filebase##*.} 
+            fileref=${filebase%.*} 
+            filered=${fileref%.*} 
+            filereff=${filebase#*.} 
 
-          sf sgd source delta \
-            --to HEAD \
-            --from "$FROM_REF" \
-            --output-dir changed-sources \
-            --generate-delta
+            # Ignore .profileSessionSetting-meta.xml and .profilePasswordPolicy-meta.xml
+            if [[ "$filereff" == "profileSessionSetting-meta.xml" || "$filereff" == "profilePasswordPolicy-meta.xml" ]]; then
+                echo "Skipping $line"
+                continue
+            fi
 
-          echo "Generated package.xml:"
-          cat changed-sources/package/package.xml
+            if echo "$filereff" | grep -o ".*-meta.*"; then
+              echo "FILE NAME IS $line"
+              cp --parent "$line" "$destdir"/
+              echo "****This is meta file*****"
+              val=$(echo "$filereff" | sed 's/-meta.*//')
+              echo "$val"
+              linee="$folderpath/$filered.$val"
+              echo "$linee"
+              if test -f "$linee"; then 
+                cp --parent "$linee" "$destdir"/
+              else 
+                echo "$linee File Not Exists and does not have its dependencies"
+              fi
+            else
+              cp --parent "$line" "$destdir"/
+              echo "****This is component file****"
+              val="-meta.xml"
+              echo "$val"
+              linee="$folderpath/$filebase$val"
+              echo "$linee"
+              if test -f "$linee"; then 
+                cp --parent "$linee" "$destdir"/
+              else 
+                echo "File Not exits"
+              fi
+            fi
+          done < "$filelist"
+
+          # aura, lwc, staticresources handling
+          folderlist=("aura" "lwc" "staticresources")
+          while read -r lined; do
+            full_name=$lined
+            for name in "${folderlist[@]}"; do
+              if echo "$full_name" | grep -q ".*$name.*"; then 
+                echo "$name"
+                folderpath=${full_name##*$name/}
+                filename_e=${folderpath%%/*}
+                echo "File path After $name folder/: $folderpath"
+                echo "Filename from starting: $filename_e" 
+                folderpath2=${full_name%$filename_e/*}
+                echo "Folder path upto $name: $folderpath2"
+                updatedpath=$folderpath2$filename_e
+                echo "$updatedpath"
+                if [ -d "$updatedpath" ]; then
+                  find "$updatedpath/"* -exec cp --parent {} -r "$destdir"/ \;
+                  echo "$updatedpath"
+                  file=$(basename "$updatedpath")
+                  echo "testing last folder $file"
+                  ls "$folderpath2" | grep "^$file\..*" | while read -r vale; do 
+                    echo "grepfiles:$folderpath2/$vale"
+                    find "$folderpath2/$vale" -exec cp --parent '{}' "$destdir"/ \;      
+                  done
+                elif [ -f "$full_name" ]; then                
+                  folderpath=${full_name%/*} 
+                  filebase=${full_name##*/} 
+                  fileref=${filebase%.*} 
+                  filered=${fileref%.*}  
+                  ls "$folderpath" | grep -e "^$filered\..*" -e "^$filered$" | while read -r vale; do 
+                    echo "grepfiles:$folderpath/$vale"
+                    find "$folderpath/$vale" -exec cp -r --parent '{}' "$destdir"/ \; 
+                  done
+                else
+                  echo "NO file Found"
+                fi
+              fi
+            done
+          done < "$filelist"
 
       - name: Check if there are metadata changes
         id: check_changes
