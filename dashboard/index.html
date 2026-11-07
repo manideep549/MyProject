@@ -1,68 +1,93 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Salesforce PR Dashboard</title>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Salesforce PR Monitoring Dashboard</title>
+
+    <link rel="stylesheet" href="./style.css">
 </head>
 
 <body>
 
-<header>
-  <h1>Salesforce Release Dashboard</h1>
-  <p>Pull Request Monitoring</p>
-  <span id="lastUpdated">Loading...</span>
-</header>
+    <header>
+        <h1>Salesforce PR Monitoring Dashboard</h1>
+        <p>Monitor Pull Requests across Salesforce release environments</p>
+        <span id="lastUpdated">Loading dashboard data...</span>
+    </header>
 
-<section class="summary" id="summary"></section>
+    <main>
 
-<section class="filters">
+        <section class="summary" id="summary">
+            <div>Open PRs: 0</div>
+            <div>Validation Failed: 0</div>
+            <div>Waiting Approval: 0</div>
+            <div>Ready to Merge: 0</div>
+        </section>
 
-  <select id="branchFilter">
-    <option value="all">All Branches</option>
-    <option value="sit_source">SIT</option>
-    <option value="int_source">INT</option>
-    <option value="preprod_source">PREPROD</option>
-    <option value="prod_source">PROD</option>
-  </select>
+        <section class="filters">
 
-  <select id="statusFilter">
-    <option value="all">All Statuses</option>
-    <option value="Validation Failed">Validation Failed</option>
-    <option value="Waiting for Approval">Waiting Approval</option>
-    <option value="Ready to Merge">Ready to Merge</option>
-    <option value="Validation In Progress">In Progress</option>
-    <option value="Draft">Draft</option>
-  </select>
+            <select id="branchFilter">
+                <option value="all">All Environments</option>
+                <option value="sit_source">SIT</option>
+                <option value="int_source">INT</option>
+                <option value="preprod_source">PREPROD</option>
+                <option value="prod_source">PROD</option>
+            </select>
 
-  <input
-    type="search"
-    id="search"
-    placeholder="Search PR / Story / Developer..."
-  >
+            <select id="statusFilter">
+                <option value="all">All Statuses</option>
+                <option value="Validation Failed">Validation Failed</option>
+                <option value="Validation In Progress">Validation In Progress</option>
+                <option value="Waiting for Approval">Waiting for Approval</option>
+                <option value="Ready to Merge">Ready to Merge</option>
+                <option value="Changes Requested">Changes Requested</option>
+                <option value="Draft">Draft</option>
+                <option value="Validation Not Started">Validation Not Started</option>
+            </select>
 
-</section>
+            <input
+                type="search"
+                id="search"
+                placeholder="Search PR, Story or Developer..."
+            >
 
-<table>
-  <thead>
-    <tr>
-      <th>PR</th>
-      <th>Story</th>
-      <th>Developer</th>
-      <th>Target</th>
-      <th>Pipeline</th>
-      <th>Approval</th>
-      <th>Pending With</th>
-      <th>Status</th>
-    </tr>
-  </thead>
+        </section>
 
-  <tbody id="prTable"></tbody>
-</table>
+        <section class="table-container">
 
-<script src="script.js"></script>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Pull Request</th>
+                        <th>Story</th>
+                        <th>Developer</th>
+                        <th>Source Branch</th>
+                        <th>Target Environment</th>
+                        <th>Pipeline</th>
+                        <th>Approvals</th>
+                        <th>Pending With</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+
+                <tbody id="prTable">
+                    <tr>
+                        <td colspan="9">Loading pull requests...</td>
+                    </tr>
+                </tbody>
+            </table>
+
+        </section>
+
+    </main>
+
+    <footer>
+        Salesforce Release Monitoring Dashboard
+    </footer>
+
+    <script src="./script.js"></script>
 
 </body>
 </html>
