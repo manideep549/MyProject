@@ -1,0 +1,104 @@
+
+let allPRs = [];
+
+async function loadDashboard() {
+  try {
+    const response = await fetch(
+      './data/prs.json?t=' + Date.now()
+    );
+
+    const data = await response.json();
+
+    allPRs = data.prs || [];
+
+    document.getElementById('lastUpdated').textContent =
+      'Last Updated: ' +
+      new Date(data.lastUpdated).toLocaleString();
+
+    renderDashboard();
+
+  } catch (error) {
+    document.getElementById('prTable').innerHTML =
+      '<tr><td colspan="8">Unable to load PR data.</td></tr>';
+
+    console.error(error);
+  }
+}
+
+function renderDashboard() {
+  const branch =
+    document.getElementById('branchFilter').value;
+
+  const status =
+    document.getElementById('statusFilter').value;
+
+  const search =
+    document.getElementById('search').value.toLowerCase();
+
+  const filtered = allPRs.filter(pr => {
+    const branchMatch =
+      branch === 'all' || pr.targetBranch === branch;
+
+    const statusMatch =
+      status === 'all' || pr.dashboardStatus === status;
+
+    const searchMatch =
+      `${pr.number} ${pr.story} ${pr.developer} ${pr.title}`
+        .toLowerCase().includes(search);
+
+    return branchMatch && statusMatch && searchMatch;
+  });
+
+  document.getElementById('summary').innerHTML = `
+    <div>Open PRs: ${filtered.length}</div>
+    <div>Failed: ${filtered.filter(p =>
+      p.dashboardStatus === 'Validation Failed').length}</div>
+    <div>Waiting Approval: ${filtered.filter(p =>
+      p.dashboardStatus === 'Waiting for Approval').length}</div>
+    <div>Ready to Merge: ${filtered.filter(p =>
+      p.dashboardStatus === 'Ready to Merge').length}</div>
+  `;
+
+  document.getElementById('prTable').innerHTML =
+    filtered.map(pr => `
+      <tr>
+        <td>
+          <a href="${escapeHTML(pr.prUrl)}"
+             target="_blank"
+             rel="noopener noreferrer">
+            #${pr.number} ↗
+          </a>
+        </td>
+
+        <td>${escapeHTML(pr.story || '-')}</td>
+        <td>${escapeHTML(pr.developer)}</td>
+        <td>${escapeHTML(pr.targetBranch)}</td>
+        <td>${escapeHTML(pr.pipelineStatus)}</td>
+        <td>${pr.approvedCount}/${pr.requiredApprovals}</td>
+        <td>${escapeHTML(
+          pr.pendingReviewers.join(', ') || '-'
+        )}</td>
+        <td>${escapeHTML(pr.dashboardStatus)}</td>
+      </tr>
+    `).join('');
+}
+
+function escapeHTML(value) {
+  return String(value).replace(/[&<>"']/g, char => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[char]);
+}
+
+['branchFilter', 'statusFilter', 'search'].forEach(id => {
+  document.getElementById(id).addEventListener(
+    'input',
+    renderDashboard
+  );
+});
+
+loadDashboard();
+setInterval(loadDashboard, 60000);
