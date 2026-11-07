@@ -1,0 +1,49 @@
+name: Salesforce PR Monitoring Dashboard
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+  actions: read
+  statuses: read
+  pages: write
+  id-token: write
+
+jobs:
+
+  # Job 1: Fetch PR details and generate JSON
+  fetch-pr-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Your complete Fetch Open PR Details step goes here.
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Dashboard
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dashboard
+
+  # Job 2: Deploy dashboard
+  deploy-dashboard:
+    needs: fetch-pr-data
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy Dashboard
+        id: deployment
+        uses: actions/deploy-pages@v4
