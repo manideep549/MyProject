@@ -1,0 +1,68 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Salesforce PR Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<header>
+  <h1>Salesforce Release Dashboard</h1>
+  <p>Pull Request Monitoring</p>
+  <span id="lastUpdated">Loading...</span>
+</header>
+
+<section class="summary" id="summary"></section>
+
+<section class="filters">
+
+  <select id="branchFilter">
+    <option value="all">All Branches</option>
+    <option value="sit_source">SIT</option>
+    <option value="int_source">INT</option>
+    <option value="preprod_source">PREPROD</option>
+    <option value="prod_source">PROD</option>
+  </select>
+
+  <select id="statusFilter">
+    <option value="all">All Statuses</option>
+    <option value="Validation Failed">Validation Failed</option>
+    <option value="Waiting for Approval">Waiting Approval</option>
+    <option value="Ready to Merge">Ready to Merge</option>
+    <option value="Validation In Progress">In Progress</option>
+    <option value="Draft">Draft</option>
+  </select>
+
+  <input
+    type="search"
+    id="search"
+    placeholder="Search PR / Story / Developer..."
+  >
+
+</section>
+
+<table>
+  <thead>
+    <tr>
+      <th>PR</th>
+      <th>Story</th>
+      <th>Developer</th>
+      <th>Target</th>
+      <th>Pipeline</th>
+      <th>Approval</th>
+      <th>Pending With</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+
+  <tbody id="prTable"></tbody>
+</table>
+
+<script src="script.js"></script>
+
+</body>
+</html>
