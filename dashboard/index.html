@@ -1,93 +1,31 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>Salesforce PR Monitoring Dashboard</title>
-
-    <link rel="stylesheet" href="./style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Salesforce PR Monitoring Dashboard</title>
+  <link rel="stylesheet" href="./style.css?v=3">
+  <script src="./script.js?v=3" defer></script>
 </head>
-
 <body>
-
-    <header>
-        <h1>Salesforce PR Monitoring Dashboard</h1>
-        <p>Monitor Pull Requests across Salesforce release environments</p>
-        <span id="lastUpdated">Loading dashboard data...</span>
-    </header>
-
-    <main>
-
-        <section class="summary" id="summary">
-            <div>Open PRs: 0</div>
-            <div>Validation Failed: 0</div>
-            <div>Waiting Approval: 0</div>
-            <div>Ready to Merge: 0</div>
-        </section>
-
-        <section class="filters">
-
-            <select id="branchFilter">
-                <option value="all">All Environments</option>
-                <option value="sit_source">SIT</option>
-                <option value="int_source">INT</option>
-                <option value="preprod_source">PREPROD</option>
-                <option value="prod_source">PROD</option>
-            </select>
-
-            <select id="statusFilter">
-                <option value="all">All Statuses</option>
-                <option value="Validation Failed">Validation Failed</option>
-                <option value="Validation In Progress">Validation In Progress</option>
-                <option value="Waiting for Approval">Waiting for Approval</option>
-                <option value="Ready to Merge">Ready to Merge</option>
-                <option value="Changes Requested">Changes Requested</option>
-                <option value="Draft">Draft</option>
-                <option value="Validation Not Started">Validation Not Started</option>
-            </select>
-
-            <input
-                type="search"
-                id="search"
-                placeholder="Search PR, Story or Developer..."
-            >
-
-        </section>
-
-        <section class="table-container">
-
-            <table>
-                <thead>
-                    <tr>
-                        <th>Pull Request</th>
-                        <th>Story</th>
-                        <th>Developer</th>
-                        <th>Source Branch</th>
-                        <th>Target Environment</th>
-                        <th>Pipeline</th>
-                        <th>Approvals</th>
-                        <th>Pending With</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-
-                <tbody id="prTable">
-                    <tr>
-                        <td colspan="9">Loading pull requests...</td>
-                    </tr>
-                </tbody>
-            </table>
-
-        </section>
-
-    </main>
-
-    <footer>
-        Salesforce Release Monitoring Dashboard
-    </footer>
-
-    <script src="./script.js"></script>
-
+  <header class="hero">
+    <div><p class="eyebrow">RELEASE OPERATIONS</p><h1>Salesforce PR Monitoring Dashboard</h1><p>Track open pull requests, validation checks and approvals across environments.</p></div>
+    <div class="refresh-area"><span id="lastUpdated">Loading dashboard data…</span><button type="button" id="refreshButton">Refresh data</button></div>
+  </header>
+  <main>
+    <section class="summary" id="summary" aria-label="PR summary">
+      <div class="metric">Open PRs <strong>—</strong></div><div class="metric">Validation Failed <strong>—</strong></div><div class="metric">Waiting Approval <strong>—</strong></div><div class="metric">Ready to Merge <strong>—</strong></div>
+    </section>
+    <section class="filters" aria-label="Dashboard filters">
+      <label>Environment <select id="branchFilter"><option value="all">All Environments</option><option value="sit_source">SIT</option><option value="int_source">INT</option><option value="preprod_source">PREPROD</option><option value="prod_source">PROD</option></select></label>
+      <label>Status <select id="statusFilter"><option value="all">All Statuses</option><option value="Validation Failed">Validation Failed</option><option value="Validation In Progress">Validation In Progress</option><option value="Waiting for Approval">Waiting for Approval</option><option value="Ready to Merge">Ready to Merge</option><option value="Changes Requested">Changes Requested</option><option value="Draft">Draft</option><option value="Validation Not Started">Validation Not Started</option><option value="Merge Conflict">Merge Conflict</option></select></label>
+      <label class="search-label">Search <input id="search" type="search" placeholder="PR number, story, developer or branch"></label>
+    </section>
+    <p id="errorMessage" class="error" role="alert" hidden></p>
+    <section class="table-container" aria-label="Open pull requests">
+      <table><thead><tr><th>Pull Request</th><th>Story</th><th>Developer</th><th>Source Branch</th><th>Target</th><th>Pipeline</th><th>Approvals</th><th>Pending With</th><th>PR Status</th></tr></thead><tbody id="prTable"><tr><td colspan="9">Loading pull requests…</td></tr></tbody></table>
+    </section>
+    <p class="footnote">Read-only dashboard · Data is refreshed by GitHub Actions · PR links open GitHub in a new tab</p>
+  </main>
 </body>
 </html>
